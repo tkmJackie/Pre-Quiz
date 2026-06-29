@@ -12,7 +12,7 @@
 
 ```text
 index.html
-cct-totp-publish-period-frontend-patch.js
+totp-publish-period.js
 ```
 
 Worker側もTOTP対応が必要です。詳細は以下を確認してください。
@@ -47,8 +47,8 @@ migration_totp_publish_period.sql
 
 ```text
 index.html
-cct-ui-patch.css
-cct-totp-publish-period-frontend-patch.js
+ui.css
+totp-publish-period.js
 migration_totp_publish_period.sql
 migration_sync_mastered.sql
 worker-totp-publish-period-notes.md
