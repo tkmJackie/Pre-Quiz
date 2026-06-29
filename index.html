@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Zerqour LMS</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="cct-ui-patch.css" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <header class="app-header">
     <div>
       <p class="eyebrow">Zerqour LMS</p>
-      <h1>Zerqour LMS α版</h1>
+      <h1>Zerqour LMS β版</h1>
     </div>
     <div id="sessionBox" class="session-box hidden"></div>
   </header>
@@ -32,7 +33,7 @@
 
       <div id="twoFactorLoginCard" class="card hidden">
         <h2>2要素認証</h2>
-        <p class="muted">メールアドレスに届いた6桁コードを入力してください。</p>
+        <p class="muted">Google Authenticatorなどの認証アプリに表示される6桁コードを入力してください。</p>
         <label>認証コード</label>
         <input id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" />
         <div class="button-list">
@@ -71,5 +72,6 @@
   </template>
 
   <script src="app.js"></script>
+  <script src="cct-totp-publish-period-frontend-patch.js"></script>
 </body>
 </html>
