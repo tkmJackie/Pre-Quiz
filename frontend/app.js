@@ -1,5 +1,5 @@
 const SESSION_KEY = "cctEnglishMulti.session.v1";
-const API_KEY = "cctEnglishMulti.apiBase.v1";
+const API_KEY = "cctEnglishMulti.apiBase.v1"; 
 const MASTER_STREAK = 3;
 
 const $ = (id) => document.getElementById(id);
