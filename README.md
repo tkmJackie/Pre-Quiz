@@ -1,4 +1,4 @@
-# CCT Quiz Enterprise v2
+# Quiz Enterprise v2
 
 企業別の問題集配信、企業担当者ロール、受講者進捗確認、回答履歴、お問い合わせチケット、Excelインポート/エクスポートに対応した版です。
 
