@@ -1,0 +1,68 @@
+/* =========================
+   CCT UI Patch
+   One Column Layout + Answer Highlight
+========================= */
+
+/* 2列カード構成を廃止し、カードは常に1列で表示 */
+.auth-grid,
+.two-col,
+.question-set-grid {
+  grid-template-columns: 1fr !important;
+}
+
+.two-col > .card,
+.auth-grid > .card,
+.question-set-grid > .question-set-card {
+  width: 100%;
+}
+
+.question-set-card {
+  min-height: auto;
+}
+
+@media (min-width: 821px) {
+  .two-col,
+  .auth-grid,
+  .question-set-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* 回答後の色分け */
+.option-row.option-correct {
+  background: #ecfdf5;
+  border-color: #22c55e;
+  color: #065f46;
+}
+
+.option-row.option-wrong {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+.option-row.option-unselected {
+  opacity: .78;
+}
+
+.option-row.option-correct::after,
+.option-row.option-wrong::after {
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.option-row.option-correct::after {
+  content: "正解";
+  background: #bbf7d0;
+  color: #166534;
+}
+
+.option-row.option-wrong::after {
+  content: "不正解";
+  background: #fecaca;
+  color: #991b1b;
+}
