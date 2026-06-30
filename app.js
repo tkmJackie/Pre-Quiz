@@ -1857,7 +1857,7 @@ async function saveQuestionEditor() {
     });
 
     showMessage("問題を更新しました。", "success");
-    await renderQuestionEditorScreen();
+    await returnQuestionEditorToAdmin();
   } catch (error) {
     showMessage(error.message || "問題の更新に失敗しました。", "error");
   }
