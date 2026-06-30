@@ -1401,3 +1401,36 @@ button:disabled {
     justify-content: flex-start;
   }
 }
+
+
+/* =========================
+   Question Edit Screen
+========================= */
+
+.question-editor-page .question-creator-header {
+  border-bottom-color: #dbeafe;
+}
+
+.table-actions {
+  margin: 0;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.question-editor-page .question-editor-panel {
+  border-color: #bfdbfe;
+}
+
+.question-editor-page .question-preview-panel {
+  border-color: #bbf7d0;
+}
+
+.question-editor-page textarea {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .table-actions {
+    flex-wrap: wrap;
+  }
+}

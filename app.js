@@ -18,11 +18,14 @@ let cache = {
   questionCreatorSetId: "",
   questionCreatorSetTitle: "",
   questionCreatorQuestions: [],
-  questionCreatorImageTarget: ""
+  questionCreatorImageTarget: "",
+  questionEditSetId: "",
+  questionEditSetTitle: "",
+  questionEditQuestionId: ""
 };
 
 
-const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "chooseQuestionCreatorImage", "clearImportedExcel", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "saveProfile", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
+const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "chooseQuestionCreatorImage", "clearImportedExcel", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestion", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "returnQuestionEditorToAdmin", "saveProfile", "saveQuestionEditor", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showQuestionEditorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
 
 function parseDeclarativeActionArgs(rawArgs) {
   const raw = String(rawArgs || "").trim();
@@ -346,6 +349,7 @@ async function renderApp() {
   const isProfile = cache.currentScreen === "profile";
   const isPassword = cache.currentScreen === "password";
   const isQuestionCreator = cache.currentScreen === "questionCreator";
+  const isQuestionEditor = cache.currentScreen === "questionEditor";
   const isSettings = isTwoFactor || isProfile || isPassword;
 
   $("adminView").classList.toggle("hidden", isContact || isSettings || session.role !== "admin");
@@ -376,6 +380,11 @@ async function renderApp() {
 
   if (isQuestionCreator) {
     await renderQuestionCreatorScreen();
+    return;
+  }
+
+  if (isQuestionEditor) {
+    await renderQuestionEditorScreen();
     return;
   }
 
@@ -1591,18 +1600,291 @@ async function selectAdminQuestionSet() {
     return;
   }
   const data = await api(`/api/admin/question-sets/${id}/questions`);
+  const questions = data.questions || [];
+  cache.questionCreatorQuestions = questions;
+
   $("questionList").innerHTML = tableHtml(
-    ["番号", "分類", "問題文", "形式", "正答数", "選択肢"],
-    (data.questions || []).map(q => [
+    ["番号", "分類", "問題文", "形式", "正答数", "選択肢", "操作"],
+    questions.map(q => [
       q.number || "",
       escapeHtml(q.category || ""),
       escapeHtml(shorten(q.question_text, 80)),
       q.answer_type === "multiple" ? "チェックボックス" : "ラジオ",
       q.correct_count,
-      rawHtml(q.options.map(o => `${o.is_correct ? "✅ " : ""}${escapeHtml(shorten(o.option_text, 28))}`).join("<br>"))
+      rawHtml(q.options.map(o => `${o.is_correct ? "✅ " : ""}${escapeHtml(shorten(o.option_text, 28))}`).join("<br>")),
+      rawHtml(`<div class="button-list table-actions">
+        <button class="mini ghost" data-action="showQuestionEditorView('${actionArg(q.id)}')">編集</button>
+        <button class="mini danger" data-action="deleteQuestion('${actionArg(q.id)}')">削除</button>
+      </div>`)
     ])
   );
 
+}
+
+
+
+async function showQuestionEditorView(questionId) {
+  if (!session || session.role !== "admin") return;
+
+  const id = String(questionId || "").trim();
+  if (!id) {
+    alert("編集する問題が選択されていません。");
+    return;
+  }
+
+  const select = $("adminSetSelect");
+  cache.questionEditSetId = select?.value || cache.questionCreatorSetId || cache.activeQuestionSetId || "";
+  cache.questionEditSetTitle = select?.selectedOptions?.[0]?.textContent || cache.questionCreatorSetTitle || "選択中の問題集";
+  cache.questionEditQuestionId = id;
+  cache.currentScreen = "questionEditor";
+  await renderApp();
+}
+
+async function returnQuestionEditorToAdmin() {
+  const setId = cache.questionEditSetId || cache.questionCreatorSetId || "";
+  cache.currentScreen = "main";
+  cache.questionEditQuestionId = "";
+  await renderApp();
+
+  if (setId && $("adminSetSelect")) {
+    $("adminSetSelect").value = setId;
+    await selectAdminQuestionSet();
+  }
+}
+
+async function fetchQuestionForEdit(questionId) {
+  const data = await api(`/api/admin/questions/${encodeURIComponent(questionId)}`);
+  return data.question;
+}
+
+async function renderQuestionEditorScreen() {
+  const root = $("adminView");
+  const questionId = cache.questionEditQuestionId || "";
+
+  if (!questionId) {
+    root.innerHTML = `
+      <section class="card">
+        <h2>問題編集</h2>
+        <p class="muted">編集対象の問題が選択されていません。</p>
+        <button class="ghost" data-action="returnQuestionEditorToAdmin()">問題集管理へ戻る</button>
+      </section>
+    `;
+    return;
+  }
+
+  const question = await fetchQuestionForEdit(questionId);
+  if (!question) {
+    root.innerHTML = `
+      <section class="card">
+        <h2>問題編集</h2>
+        <p class="muted">問題が見つかりませんでした。</p>
+        <button class="ghost" data-action="returnQuestionEditorToAdmin()">問題集管理へ戻る</button>
+      </section>
+    `;
+    return;
+  }
+
+  cache.questionEditSetId = question.question_set_id || cache.questionEditSetId || "";
+  cache.questionEditSetTitle = question.question_set_title || cache.questionEditSetTitle || "選択中の問題集";
+
+  root.innerHTML = `
+    <section class="card question-creator-page question-editor-page">
+      <div class="question-creator-header">
+        <div>
+          <p class="eyebrow">QUESTION EDITOR</p>
+          <h2>問題編集</h2>
+          <p class="muted">対象問題集：${escapeHtml(cache.questionEditSetTitle || "選択中の問題集")}</p>
+        </div>
+        <div class="button-list">
+          <button class="ghost" data-action="returnQuestionEditorToAdmin()">問題集管理へ戻る</button>
+          <button class="danger" data-action="deleteQuestion('${actionArg(question.id)}')">この問題を削除</button>
+        </div>
+      </div>
+
+      <div id="manualQuestionCreator"></div>
+    </section>
+  `;
+
+  renderManualQuestionEditor(question);
+}
+
+function renderManualQuestionEditor(question) {
+  const root = $("manualQuestionCreator");
+  if (!root) return;
+
+  const options = Array.isArray(question.options) && question.options.length
+    ? question.options
+    : [
+        { id: `option_${Date.now()}_1`, option_text: "", is_correct: 1 },
+        { id: `option_${Date.now()}_2`, option_text: "", is_correct: 0 }
+      ];
+
+  root.innerHTML = `
+    <section class="question-builder-grid question-builder-grid-reversed">
+      <section class="question-editor-panel">
+        <div class="section-title-row">
+          <h4>問題入力</h4>
+          <span class="pill">編集</span>
+        </div>
+
+        <div class="two-col">
+          <div>
+            <label>番号</label>
+            <input id="manualQuestionNumber" type="number" min="1" value="${escapeAttr(question.number || "")}">
+          </div>
+          <div>
+            <label>分類</label>
+            <input id="manualQuestionCategory" value="${escapeAttr(question.category || "")}" placeholder="例：情報セキュリティ">
+          </div>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>① 問題文セクション</h5>
+          <p class="muted">Excelで入れた問題も、手動で作成した問題も編集できます。Markdown形式・表・図に対応しています。</p>
+          <div class="editor-toolbar">
+            <button type="button" class="ghost mini" data-action="chooseQuestionCreatorImage('manualQuestionText')">問題文に図を追加</button>
+            <span class="muted">画像をコピーして、この欄に貼り付けることもできます。</span>
+          </div>
+          <textarea id="manualQuestionText" class="image-paste-target" rows="8">${escapeHtml(question.question_text || "")}</textarea>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>② 選択肢セクション</h5>
+          <p class="muted">選択肢の追加・削除、正解チェックの変更ができます。</p>
+          <div id="manualOptionsList" class="question-options-editor">
+            ${options.map((option, index) => questionCreatorOptionRow(
+              option.id || `option_${Date.now()}_${index}`,
+              option.option_text || option.text || "",
+              Number(option.is_correct || 0) === 1 || option.isCorrect === true
+            )).join("")}
+          </div>
+          <button type="button" class="ghost" data-action="addQuestionCreatorOption()">選択肢を追加</button>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>③ 解答解説セクション</h5>
+          <p class="muted">Markdown形式・表・図に対応しています。</p>
+          <div class="editor-toolbar">
+            <button type="button" class="ghost mini" data-action="chooseQuestionCreatorImage('manualExplanation')">解答解説に図を追加</button>
+            <span class="muted">画像をコピーして、この欄に貼り付けることもできます。</span>
+          </div>
+          <textarea id="manualExplanation" class="image-paste-target" rows="7">${escapeHtml(question.explanation || "")}</textarea>
+        </div>
+
+        <div class="button-list">
+          <button data-action="saveQuestionEditor()">変更を保存</button>
+          <button class="ghost" data-action="returnQuestionEditorToAdmin()">問題集管理へ戻る</button>
+        </div>
+      </section>
+
+      <section class="question-preview-panel">
+        <div class="question-builder-sticky">
+          <div class="section-title-row">
+            <h4>HTMLプレビュー</h4>
+            <span class="pill">右画面</span>
+          </div>
+
+          <div class="preview-card">
+            <p class="muted">問題文HTMLプレビュー</p>
+            <div id="manualQuestionPreviewText" class="markdown-preview"></div>
+            <details class="html-output-box">
+              <summary>変換後HTMLを表示</summary>
+              <pre id="manualQuestionPreviewHtml"></pre>
+            </details>
+
+            <p class="muted mt-12">選択肢プレビュー</p>
+            <div id="manualQuestionPreviewOptions" class="preview-options"></div>
+
+            <p class="muted mt-12">解答解説HTMLプレビュー</p>
+            <div id="manualExplanationPreview" class="markdown-preview explanation-preview"></div>
+            <details class="html-output-box">
+              <summary>変換後HTMLを表示</summary>
+              <pre id="manualExplanationPreviewHtml"></pre>
+            </details>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <input id="manualImageFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden">
+  `;
+
+  const formRoot = $("manualQuestionCreator");
+  if (formRoot) formRoot.dataset.bound = "0";
+  bindQuestionCreatorEvents();
+  updateQuestionCreatorPreview();
+}
+
+function validateQuestionEditorPayload() {
+  const questionText = $("manualQuestionText")?.value.trim() || "";
+  const explanation = $("manualExplanation")?.value.trim() || "";
+  const category = $("manualQuestionCategory")?.value.trim() || "";
+  const number = Number($("manualQuestionNumber")?.value || 0) || null;
+
+  const options = collectQuestionCreatorOptions()
+    .map(option => ({
+      text: option.text,
+      isCorrect: option.isCorrect
+    }))
+    .filter(option => option.text);
+
+  const correctCount = options.filter(option => option.isCorrect).length;
+
+  if (!questionText) throw new Error("問題文を入力してください。");
+  if (options.length < 2) throw new Error("選択肢は最低2つ入力してください。");
+  if (correctCount < 1) throw new Error("正解の選択肢にチェックを入れてください。");
+
+  return {
+    number,
+    category,
+    questionText,
+    explanation,
+    correctCount,
+    options
+  };
+}
+
+async function saveQuestionEditor() {
+  const questionId = cache.questionEditQuestionId || "";
+  if (!questionId) return alert("編集対象の問題が選択されていません。");
+
+  try {
+    const payload = validateQuestionEditorPayload();
+
+    await api(`/api/admin/questions/${encodeURIComponent(questionId)}/update`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+
+    showMessage("問題を更新しました。", "success");
+    await renderQuestionEditorScreen();
+  } catch (error) {
+    showMessage(error.message || "問題の更新に失敗しました。", "error");
+  }
+}
+
+async function deleteQuestion(questionId = "") {
+  const id = String(questionId || cache.questionEditQuestionId || "").trim();
+  if (!id) return alert("削除する問題が選択されていません。");
+
+  if (!confirm("この問題を削除しますか？\\n回答履歴と進捗も削除されます。")) return;
+
+  try {
+    await api(`/api/admin/questions/${encodeURIComponent(id)}/delete`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+
+    showMessage("問題を削除しました。", "success");
+
+    if (cache.currentScreen === "questionEditor") {
+      await returnQuestionEditorToAdmin();
+    } else {
+      await selectAdminQuestionSet();
+    }
+  } catch (error) {
+    showMessage(error.message || "問題の削除に失敗しました。", "error");
+  }
 }
 
 
