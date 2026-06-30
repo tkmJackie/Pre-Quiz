@@ -17,11 +17,12 @@ let cache = {
   twoFactorSetup: null,
   questionCreatorSetId: "",
   questionCreatorSetTitle: "",
-  questionCreatorQuestions: []
+  questionCreatorQuestions: [],
+  questionCreatorImageTarget: ""
 };
 
 
-const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "clearImportedExcel", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "saveProfile", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
+const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "chooseQuestionCreatorImage", "clearImportedExcel", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "saveProfile", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
 
 function parseDeclarativeActionArgs(rawArgs) {
   const raw = String(rawArgs || "").trim();
@@ -481,6 +482,8 @@ async function renderProfileView() {
         </div>
       </section>
     </section>
+
+    <input id="manualImageFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden">
   `;
 }
 
@@ -1602,12 +1605,125 @@ async function renderQuestionCreatorScreen() {
 
 
 
+function isAllowedMarkdownImageSrc(src) {
+  const value = String(src || "").trim();
+
+  if (/^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(value)) {
+    return true;
+  }
+
+  if (/^https:\/\/[^\s"'<>]+$/i.test(value)) {
+    return true;
+  }
+
+  if (/^(?:\.\/)?images\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+\.(?:png|jpe?g|webp|gif)$/i.test(value)) {
+    return true;
+  }
+
+  return false;
+}
+
 function inlineMarkdown(text) {
-  let html = escapeHtml(text);
+  const imageTokens = [];
+  let source = String(text || "");
+
+  source = source.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (match, alt, src) => {
+    const cleanSrc = String(src || "").trim();
+    if (!isAllowedMarkdownImageSrc(cleanSrc)) {
+      return match;
+    }
+
+    const token = `@@MD_IMAGE_${imageTokens.length}@@`;
+    imageTokens.push({
+      token,
+      html: `<img class="markdown-image" src="${escapeAttr(cleanSrc)}" alt="${escapeAttr(alt || "図")}">`
+    });
+    return token;
+  });
+
+  let html = escapeHtml(source);
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+  for (const item of imageTokens) {
+    html = html.replaceAll(item.token, item.html);
+  }
+
   return html;
+}
+
+function splitMarkdownTableRow(line) {
+  const trimmed = String(line || "").trim();
+  const content = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+  const cells = [];
+  let current = "";
+  let escaped = false;
+
+  for (const char of content) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "|") {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function isMarkdownTableSeparator(line) {
+  const cells = splitMarkdownTableRow(line);
+  if (cells.length < 2) return false;
+
+  return cells.every((cell) => {
+    const normalized = String(cell || "").trim();
+    return /^:?-{3,}:?$/.test(normalized);
+  });
+}
+
+function tableAlignFromSeparator(cell) {
+  const value = String(cell || "").trim();
+  if (value.startsWith(":") && value.endsWith(":")) return "center";
+  if (value.endsWith(":")) return "right";
+  return "left";
+}
+
+function renderMarkdownTable(headers, separators, rows) {
+  const aligns = separators.map(tableAlignFromSeparator);
+
+  const thead = `
+    <thead>
+      <tr>
+        ${headers.map((header, index) => `<th style="text-align:${aligns[index] || "left"}">${inlineMarkdown(header)}</th>`).join("")}
+      </tr>
+    </thead>
+  `;
+
+  const tbody = `
+    <tbody>
+      ${rows.map(row => `
+        <tr>
+          ${headers.map((_, index) => `<td style="text-align:${aligns[index] || "left"}">${inlineMarkdown(row[index] || "")}</td>`).join("")}
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+
+  return `<div class="markdown-table-wrap"><table>${thead}${tbody}</table></div>`;
 }
 
 function renderMarkdownPreview(markdown) {
@@ -1639,7 +1755,8 @@ function renderMarkdownPreview(markdown) {
     code = [];
   }
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     const raw = String(line || "");
     const trimmed = raw.trim();
 
@@ -1663,6 +1780,31 @@ function renderMarkdownPreview(markdown) {
     if (!trimmed) {
       flushParagraph();
       flushList();
+      continue;
+    }
+
+    const nextLine = lines[i + 1] || "";
+    if (trimmed.includes("|") && isMarkdownTableSeparator(nextLine)) {
+      flushParagraph();
+      flushList();
+
+      const headers = splitMarkdownTableRow(trimmed);
+      const separators = splitMarkdownTableRow(nextLine);
+      const rows = [];
+
+      i += 2;
+      while (i < lines.length) {
+        const rowLine = String(lines[i] || "").trim();
+        if (!rowLine || !rowLine.includes("|")) {
+          i -= 1;
+          break;
+        }
+
+        rows.push(splitMarkdownTableRow(rowLine));
+        i += 1;
+      }
+
+      html.push(renderMarkdownTable(headers, separators, rows));
       continue;
     }
 
@@ -1699,8 +1841,11 @@ function questionCreatorOptionRow(rowId, text = "", checked = false) {
         <input type="checkbox" class="manual-option-correct" ${checked ? "checked" : ""}>
         <span>正解</span>
       </label>
-      <input class="manual-option-text" value="${escapeAttr(text)}" placeholder="選択肢を入力">
-      <button type="button" class="ghost mini" data-action="removeQuestionCreatorOption('${actionArg(rowId)}')">削除</button>
+      <textarea class="manual-option-text image-paste-target" rows="2" placeholder="選択肢を入力。図を貼り付ける場合は、ここに画像をペーストしてください。">${escapeHtml(text)}</textarea>
+      <div class="option-row-actions">
+        <button type="button" class="ghost mini" data-action="chooseQuestionCreatorImage('option:${actionArg(rowId)}')">図を追加</button>
+        <button type="button" class="ghost mini" data-action="removeQuestionCreatorOption('${actionArg(rowId)}')">削除</button>
+      </div>
     </div>
   `;
 }
@@ -1754,7 +1899,11 @@ function renderManualQuestionCreator(questions = [], draft = {}) {
         <div class="question-editor-section">
           <h5>① 問題文セクション</h5>
           <p class="muted">Markdown形式で入力できます。右側にHTMLへ変換したプレビューを表示します。</p>
-          <textarea id="manualQuestionText" rows="8" placeholder="# 問題文&#10;&#10;以下のうち、正しいものを選んでください。"></textarea>
+          <div class="editor-toolbar">
+            <button type="button" class="ghost mini" data-action="chooseQuestionCreatorImage('manualQuestionText')">問題文に図を追加</button>
+            <span class="muted">画像をコピーして、この欄に貼り付けることもできます。</span>
+          </div>
+          <textarea id="manualQuestionText" class="image-paste-target" rows="8" placeholder="# 問題文&#10;&#10;以下のうち、正しいものを選んでください。"></textarea>
         </div>
 
         <div class="question-editor-section">
@@ -1770,7 +1919,11 @@ function renderManualQuestionCreator(questions = [], draft = {}) {
         <div class="question-editor-section">
           <h5>③ 解答解説セクション</h5>
           <p class="muted">Markdown形式で入力できます。右側にHTMLへ変換したプレビューを表示します。</p>
-          <textarea id="manualExplanation" rows="7" placeholder="## 解説&#10;&#10;この選択肢が正解となる理由を入力してください。"></textarea>
+          <div class="editor-toolbar">
+            <button type="button" class="ghost mini" data-action="chooseQuestionCreatorImage('manualExplanation')">解答解説に図を追加</button>
+            <span class="muted">画像をコピーして、この欄に貼り付けることもできます。</span>
+          </div>
+          <textarea id="manualExplanation" class="image-paste-target" rows="7" placeholder="## 解説&#10;&#10;この選択肢が正解となる理由を入力してください。"></textarea>
         </div>
 
         <div class="button-list">
@@ -1819,7 +1972,182 @@ function bindQuestionCreatorEvents() {
   root.dataset.bound = "1";
 
   root.addEventListener("input", () => updateQuestionCreatorPreview());
-  root.addEventListener("change", () => updateQuestionCreatorPreview());
+
+  root.addEventListener("change", (event) => {
+    if (event.target?.id === "manualImageFileInput") {
+      handleQuestionCreatorImageFileInput(event);
+      return;
+    }
+
+    updateQuestionCreatorPreview();
+  });
+
+  root.addEventListener("paste", (event) => {
+    handleQuestionCreatorImagePaste(event);
+  });
+
+  root.addEventListener("dragover", (event) => {
+    if (isQuestionCreatorEditable(event.target) && hasImageFiles(event.dataTransfer?.files)) {
+      event.preventDefault();
+    }
+  });
+
+  root.addEventListener("drop", (event) => {
+    handleQuestionCreatorImageDrop(event);
+  });
+}
+
+function isQuestionCreatorEditable(target) {
+  return Boolean(target?.matches?.("#manualQuestionText, #manualExplanation, .manual-option-text"));
+}
+
+function hasImageFiles(files) {
+  return Array.from(files || []).some(file => /^image\/(?:png|jpeg|jpg|webp|gif)$/i.test(file.type));
+}
+
+function questionCreatorImageMarkdown(dataUrl, fileName = "図") {
+  const alt = String(fileName || "図").replace(/\.[^.]+$/, "").trim() || "図";
+  return `\n\n![${alt}](${dataUrl})\n\n`;
+}
+
+function insertTextAtCursor(element, text) {
+  if (!element) return;
+
+  const start = Number(element.selectionStart ?? element.value.length);
+  const end = Number(element.selectionEnd ?? element.value.length);
+  const before = element.value.slice(0, start);
+  const after = element.value.slice(end);
+
+  element.value = `${before}${text}${after}`;
+
+  const nextPosition = start + text.length;
+  element.selectionStart = nextPosition;
+  element.selectionEnd = nextPosition;
+  element.focus();
+
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function imageFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\/(?:png|jpeg|jpg|webp|gif)$/i.test(file.type)) {
+      reject(new Error("PNG、JPEG、WebP、GIF形式の画像だけ貼り付けできます。"));
+      return;
+    }
+
+    if (file.type.toLowerCase() === "image/gif") {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("画像の読み込みに失敗しました。"));
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 1100;
+        const maxHeight = 900;
+        const scale = Math.min(1, maxWidth / img.width, maxHeight / img.height);
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext("2d");
+        context.drawImage(img, 0, 0, width, height);
+
+        const outputType = file.type.toLowerCase() === "image/png" ? "image/png" : "image/jpeg";
+        const dataUrl = outputType === "image/png"
+          ? canvas.toDataURL(outputType)
+          : canvas.toDataURL(outputType, 0.86);
+
+        resolve(dataUrl);
+      };
+
+      img.onerror = () => reject(new Error("画像の変換に失敗しました。"));
+      img.src = String(reader.result || "");
+    };
+
+    reader.onerror = () => reject(new Error("画像の読み込みに失敗しました。"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function insertQuestionCreatorImageFile(targetElement, file) {
+  try {
+    const dataUrl = await imageFileToDataUrl(file);
+    insertTextAtCursor(targetElement, questionCreatorImageMarkdown(dataUrl, file.name || "図"));
+    showMessage("図を挿入しました。", "success");
+  } catch (error) {
+    showMessage(error.message || "図の挿入に失敗しました。", "error");
+  }
+}
+
+function getQuestionCreatorImageTargetElement(targetKey) {
+  const key = String(targetKey || "").trim();
+
+  if (key.startsWith("option:")) {
+    const rowId = key.slice("option:".length);
+    return document.querySelector(`#manualOptionsList .question-option-row[data-row-id="${CSS.escape(rowId)}"] .manual-option-text`);
+  }
+
+  if (key) return $(key);
+
+  const active = document.activeElement;
+  if (isQuestionCreatorEditable(active)) return active;
+
+  return $("manualQuestionText") || $("manualExplanation") || document.querySelector(".manual-option-text");
+}
+
+function chooseQuestionCreatorImage(targetKey = "") {
+  cache.questionCreatorImageTarget = String(targetKey || "");
+  const input = $("manualImageFileInput");
+  if (!input) return;
+
+  input.value = "";
+  input.click();
+}
+
+async function handleQuestionCreatorImageFileInput(event) {
+  const file = event.target?.files?.[0];
+  if (!file) return;
+
+  const target = getQuestionCreatorImageTargetElement(cache.questionCreatorImageTarget);
+  await insertQuestionCreatorImageFile(target, file);
+
+  cache.questionCreatorImageTarget = "";
+  event.target.value = "";
+}
+
+async function handleQuestionCreatorImagePaste(event) {
+  if (!isQuestionCreatorEditable(event.target)) return;
+
+  const items = Array.from(event.clipboardData?.items || []);
+  const imageItem = items.find(item => /^image\/(?:png|jpeg|jpg|webp|gif)$/i.test(item.type));
+  if (!imageItem) return;
+
+  const file = imageItem.getAsFile();
+  if (!file) return;
+
+  event.preventDefault();
+  await insertQuestionCreatorImageFile(event.target, file);
+}
+
+async function handleQuestionCreatorImageDrop(event) {
+  if (!isQuestionCreatorEditable(event.target)) return;
+
+  const files = Array.from(event.dataTransfer?.files || []).filter(file => /^image\/(?:png|jpeg|jpg|webp|gif)$/i.test(file.type));
+  if (!files.length) return;
+
+  event.preventDefault();
+
+  for (const file of files) {
+    await insertQuestionCreatorImageFile(event.target, file);
+  }
 }
 
 function collectQuestionCreatorOptions() {
@@ -1859,7 +2187,7 @@ function updateQuestionCreatorPreview() {
   optionsPreview.innerHTML = visibleOptions.map((option, index) => `
     <div class="preview-option ${option.isCorrect ? "correct" : ""}">
       <span class="preview-option-letter">${String.fromCharCode(65 + index)}</span>
-      <span>${escapeHtml(option.text)}</span>
+      <div class="preview-option-body">${renderMarkdownPreview(option.text)}</div>
       ${option.isCorrect ? `<strong>正解</strong>` : ""}
     </div>
   `).join("");
@@ -2580,13 +2908,13 @@ async function loadQuiz() {
       <button class="ghost mini" data-action="createQuestionTicket()">この問題について問い合わせ</button>
     </div>
 
-    <p class="question-title">${escapeHtml(q.questionText)}</p>
+    <div class="question-title markdown-preview quiz-markdown">${renderMarkdownPreview(q.questionText)}</div>
 
     <div class="quiz-options">
       ${q.options.map(o => `
         <label class="option-row large-option" data-option-id="${escapeHtml(o.id)}">
           <input type="${inputType}" name="answerOption" value="${escapeHtml(o.id)}">
-          <span>${escapeHtml(o.text)}</span>
+          <span class="quiz-option-text markdown-preview">${renderMarkdownPreview(o.text)}</span>
         </label>
       `).join("")}
     </div>
@@ -2684,9 +3012,15 @@ async function submitAnswer() {
           <p><strong>${resultTitle}</strong></p>
           <p>${escapeHtml(streakMessage)}</p>
           ${masteredMessage ? `<p class="muted">${escapeHtml(masteredMessage)}</p>` : ""}
-          <p><strong>あなたの回答：</strong>${escapeHtml(data.selectedAnswer || "未選択")}</p>
-          <p><strong>正解：</strong>${escapeHtml(data.correctAnswer || "")}</p>
-          ${data.explanation ? `<p><strong>解説：</strong>${escapeHtml(data.explanation)}</p>` : ""}
+          <div class="answer-summary-block">
+            <strong>あなたの回答：</strong>
+            <div class="markdown-preview">${renderMarkdownPreview(data.selectedAnswer || "未選択")}</div>
+          </div>
+          <div class="answer-summary-block">
+            <strong>正解：</strong>
+            <div class="markdown-preview">${renderMarkdownPreview(data.correctAnswer || "")}</div>
+          </div>
+          ${data.explanation ? `<div class="answer-summary-block"><strong>解説：</strong><div class="markdown-preview explanation-preview">${renderMarkdownPreview(data.explanation)}</div></div>` : ""}
           <button data-action="loadQuiz()">次の問題へ</button>
         </div>
       `;
