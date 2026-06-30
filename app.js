@@ -127,17 +127,71 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function parseJwtPayload(token) {
+  try {
+    const payload = String(token || "").split(".")[1];
+    if (!payload) return null;
+
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+function getJwtExpiresAt(token) {
+  const payload = parseJwtPayload(token);
+  const exp = Number(payload?.exp || 0);
+  return exp > 0 ? exp * 1000 : 0;
+}
+
+function isStoredSessionUsable(value) {
+  if (!value || typeof value !== "object") return false;
+  if (!value.token || !value.username || !Array.isArray(value.roles)) return false;
+
+  const expiresAt = Number(value.expiresAt || getJwtExpiresAt(value.token) || 0);
+  if (!expiresAt) return false;
+
+  // 期限切れ直前のトークンは復元しない
+  if (expiresAt <= Date.now() + 10 * 1000) return false;
+
+  return true;
+}
+
 function loadSession() {
-  // セキュリティ対策:
-  // JWTはlocalStorageへ保存しません。
-  // ページを再読み込みした場合は再ログインが必要です。
-  return null;
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+
+    const saved = JSON.parse(raw);
+    if (!isStoredSessionUsable(saved)) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+
+    return saved;
+  } catch {
+    sessionStorage.removeItem(STORAGE_KEY);
+    return null;
+  }
 }
 
 function saveSession() {
-  // セキュリティ対策:
-  // 認証セッションはメモリ上だけで保持します。
-  // localStorage/sessionStorageにはJWTを保存しません。
+  try {
+    if (!session?.token) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      ...session,
+      savedAt: Date.now(),
+      expiresAt: getJwtExpiresAt(session.token)
+    }));
+  } catch {
+    // sessionStorageが使えない環境では、メモリ上のセッションだけで動作します。
+  }
 }
 
 
@@ -190,7 +244,15 @@ async function api(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (data.mustSetupTwoFactor) {
+    if (response.status === 401 && session?.token) {
+      session = null;
+      saveSession();
+      cache.currentScreen = "main";
+      await renderApp();
+      throw new Error("ログイン状態の有効期限が切れました。もう一度ログインしてください。");
+    }
+
+    if (data.mustSetupTwoFactor && session) {
       session.mustSetupTwoFactor = true;
       session.twoFactorEnabled = false;
       saveSession();
