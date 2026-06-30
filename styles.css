@@ -1235,3 +1235,42 @@ button:disabled {
 #twoFactorLoginCard .trust-device-row {
   margin-left: 0;
 }
+
+
+/* =========================
+   Question Builder HTML Preview
+========================= */
+
+.html-output-box {
+  margin-top: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.html-output-box summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  color: #1d4ed8;
+  font-weight: 800;
+  list-style-position: inside;
+}
+
+.html-output-box pre {
+  margin: 0;
+  padding: 12px;
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid #dbeafe;
+  background: #0f172a;
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.question-builder-grid-reversed .question-editor-panel textarea {
+  min-height: 170px;
+}

@@ -1713,7 +1713,7 @@ function nextManualQuestionNumber(questions = []) {
   return Math.max(...numbers) + 1;
 }
 
-function renderManualQuestionCreator(questions = []) {
+function renderManualQuestionCreator(questions = [], draft = {}) {
   const root = $("manualQuestionCreator");
   if (!root) return;
 
@@ -1727,7 +1727,8 @@ function renderManualQuestionCreator(questions = []) {
     return;
   }
 
-  const nextNumber = nextManualQuestionNumber(questions);
+  const nextNumber = Number(draft.number || 0) || nextManualQuestionNumber(questions);
+  const draftCategory = String(draft.category || "");
   const firstId = `option_${Date.now()}_1`;
   const secondId = `option_${Date.now()}_2`;
 
@@ -1746,13 +1747,13 @@ function renderManualQuestionCreator(questions = []) {
           </div>
           <div>
             <label>分類</label>
-            <input id="manualQuestionCategory" placeholder="例：情報セキュリティ">
+            <input id="manualQuestionCategory" value="${escapeAttr(draftCategory)}" placeholder="例：情報セキュリティ">
           </div>
         </div>
 
         <div class="question-editor-section">
           <h5>① 問題文セクション</h5>
-          <p class="muted">Markdown形式で入力できます。見出し、箇条書き、太字、コード記法に対応しています。</p>
+          <p class="muted">Markdown形式で入力できます。右側にHTMLへ変換したプレビューを表示します。</p>
           <textarea id="manualQuestionText" rows="8" placeholder="# 問題文&#10;&#10;以下のうち、正しいものを選んでください。"></textarea>
         </div>
 
@@ -1768,12 +1769,12 @@ function renderManualQuestionCreator(questions = []) {
 
         <div class="question-editor-section">
           <h5>③ 解答解説セクション</h5>
-          <p class="muted">Markdown形式で入力できます。</p>
+          <p class="muted">Markdown形式で入力できます。右側にHTMLへ変換したプレビューを表示します。</p>
           <textarea id="manualExplanation" rows="7" placeholder="## 解説&#10;&#10;この選択肢が正解となる理由を入力してください。"></textarea>
         </div>
 
         <div class="button-list">
-          <button data-action="saveQuestionFromCreator()">問題を保存</button>
+          <button data-action="saveQuestionFromCreator()">問題を保存して次へ</button>
           <button class="ghost" data-action="clearQuestionCreatorForm()">入力内容をクリア</button>
         </div>
       </section>
@@ -1781,19 +1782,27 @@ function renderManualQuestionCreator(questions = []) {
       <section class="question-preview-panel">
         <div class="question-builder-sticky">
           <div class="section-title-row">
-            <h4>プレビュー</h4>
+            <h4>HTMLプレビュー</h4>
             <span class="pill">右画面</span>
           </div>
 
           <div class="preview-card">
-            <p class="muted">問題文プレビュー</p>
+            <p class="muted">問題文HTMLプレビュー</p>
             <div id="manualQuestionPreviewText" class="markdown-preview"></div>
+            <details class="html-output-box">
+              <summary>変換後HTMLを表示</summary>
+              <pre id="manualQuestionPreviewHtml"></pre>
+            </details>
 
             <p class="muted mt-12">選択肢プレビュー</p>
             <div id="manualQuestionPreviewOptions" class="preview-options"></div>
 
-            <p class="muted mt-12">解答解説プレビュー</p>
+            <p class="muted mt-12">解答解説HTMLプレビュー</p>
             <div id="manualExplanationPreview" class="markdown-preview explanation-preview"></div>
+            <details class="html-output-box">
+              <summary>変換後HTMLを表示</summary>
+              <pre id="manualExplanationPreviewHtml"></pre>
+            </details>
           </div>
         </div>
       </section>
@@ -1826,10 +1835,18 @@ function updateQuestionCreatorPreview() {
   const questionPreview = $("manualQuestionPreviewText");
   const optionsPreview = $("manualQuestionPreviewOptions");
   const explanationPreview = $("manualExplanationPreview");
+  const questionPreviewHtml = $("manualQuestionPreviewHtml");
+  const explanationPreviewHtml = $("manualExplanationPreviewHtml");
   if (!questionPreview || !optionsPreview || !explanationPreview) return;
 
-  questionPreview.innerHTML = renderMarkdownPreview($("manualQuestionText")?.value || "");
-  explanationPreview.innerHTML = renderMarkdownPreview($("manualExplanation")?.value || "");
+  const questionHtml = renderMarkdownPreview($("manualQuestionText")?.value || "");
+  const explanationHtml = renderMarkdownPreview($("manualExplanation")?.value || "");
+
+  questionPreview.innerHTML = questionHtml;
+  explanationPreview.innerHTML = explanationHtml;
+
+  if (questionPreviewHtml) questionPreviewHtml.textContent = questionHtml;
+  if (explanationPreviewHtml) explanationPreviewHtml.textContent = explanationHtml;
 
   const options = collectQuestionCreatorOptions();
   const visibleOptions = options.filter(option => option.text);
@@ -1875,7 +1892,12 @@ function removeQuestionCreatorOption(rowId) {
 
 function clearQuestionCreatorForm() {
   if (!confirm("入力中の問題をクリアしますか？")) return;
-  renderManualQuestionCreator(cache.questionCreatorQuestions || []);
+  const currentNumber = Number($("manualQuestionNumber")?.value || 0) || nextManualQuestionNumber(cache.questionCreatorQuestions || []);
+  const currentCategory = $("manualQuestionCategory")?.value.trim() || "";
+  renderManualQuestionCreator(cache.questionCreatorQuestions || [], {
+    number: currentNumber,
+    category: currentCategory
+  });
 }
 
 async function saveQuestionFromCreator() {
@@ -1921,9 +1943,18 @@ async function saveQuestionFromCreator() {
       return;
     }
 
-    showMessage("問題を作成しました。", "success");
+    const currentNumber = Number($("manualQuestionNumber")?.value || 0) || nextManualQuestionNumber(cache.questionCreatorQuestions || []);
+    const currentCategory = $("manualQuestionCategory")?.value.trim() || "";
+
+    showMessage("問題を作成しました。次の問題を入力できます。", "success");
+
     if (cache.currentScreen === "questionCreator") {
-      await renderQuestionCreatorScreen();
+      const latest = await api(`/api/admin/question-sets/${setId}/questions`);
+      cache.questionCreatorQuestions = latest.questions || [];
+      renderManualQuestionCreator(cache.questionCreatorQuestions, {
+        number: currentNumber + 1,
+        category: currentCategory
+      });
     } else {
       await selectAdminQuestionSet();
     }
