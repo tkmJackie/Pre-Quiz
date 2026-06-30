@@ -14,11 +14,14 @@ let cache = {
   currentScreen: "main",
   categoriesBySet: {},
   pendingTwoFactor: null,
-  twoFactorSetup: null
+  twoFactorSetup: null,
+  questionCreatorSetId: "",
+  questionCreatorSetTitle: "",
+  questionCreatorQuestions: []
 };
 
 
-const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "clearImportedExcel", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "saveProfile", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
+const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "clearImportedExcel", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "saveProfile", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
 
 function parseDeclarativeActionArgs(rawArgs) {
   const raw = String(rawArgs || "").trim();
@@ -279,6 +282,7 @@ async function renderApp() {
   const isTwoFactor = cache.currentScreen === "twoFactor";
   const isProfile = cache.currentScreen === "profile";
   const isPassword = cache.currentScreen === "password";
+  const isQuestionCreator = cache.currentScreen === "questionCreator";
   const isSettings = isTwoFactor || isProfile || isPassword;
 
   $("adminView").classList.toggle("hidden", isContact || isSettings || session.role !== "admin");
@@ -304,6 +308,11 @@ async function renderApp() {
 
   if (isTwoFactor) {
     await renderTwoFactorView();
+    return;
+  }
+
+  if (isQuestionCreator) {
+    await renderQuestionCreatorScreen();
     return;
   }
 
@@ -930,8 +939,8 @@ function showLoginTwoFactorNotice(data) {
     trust.id = "trustDeviceForWeekWrap";
     trust.className = "trust-device-row";
     trust.innerHTML = `
-      <input id="trustDeviceForWeek" type="checkbox" checked>
-      <span>このデバイスでは1週間、2要素認証を省略する</span>
+      <input id="trustDeviceForWeek" class="trust-device-checkbox" type="checkbox" checked>
+      <span class="trust-device-text">このデバイスでは1週間、2要素認証を省略する</span>
     `;
     const buttonList = card.querySelector(".button-list");
     if (buttonList) card.insertBefore(trust, buttonList);
@@ -1139,8 +1148,9 @@ function adminQuestionSetCard() {
         <button class="danger" data-action="deleteQuestionSet()">選択中の問題集を削除</button>
       </div>
 
-      <h3>問題作成</h3>
-      <div id="manualQuestionCreator"></div>
+      <div class="button-list mt-12">
+        <button data-action="showQuestionCreatorView()">問題作成画面を開く</button>
+      </div>
 
       <h3>問題集一覧</h3>
       <div id="questionSetList" class="table-wrap"></div>
@@ -1513,7 +1523,6 @@ async function selectAdminQuestionSet() {
   const id = $("adminSetSelect")?.value;
   if (!id) {
     if ($("questionList")) $("questionList").innerHTML = `<p class="muted">問題集を選択してください。</p>`;
-    renderManualQuestionCreator([]);
     return;
   }
   const data = await api(`/api/admin/question-sets/${id}/questions`);
@@ -1529,8 +1538,68 @@ async function selectAdminQuestionSet() {
     ])
   );
 
-  renderManualQuestionCreator(data.questions || []);
 }
+
+
+function showQuestionCreatorView() {
+  if (!session || session.role !== "admin") return;
+
+  const select = $("adminSetSelect");
+  const setId = select?.value || "";
+  if (!setId) {
+    alert("先に問題集を選択してください。");
+    return;
+  }
+
+  cache.questionCreatorSetId = setId;
+  cache.questionCreatorSetTitle = select?.selectedOptions?.[0]?.textContent || "選択中の問題集";
+  cache.currentScreen = "questionCreator";
+  renderApp();
+}
+
+function returnQuestionCreatorToAdmin() {
+  cache.currentScreen = "main";
+  renderApp();
+}
+
+async function renderQuestionCreatorScreen() {
+  const root = $("adminView");
+  const setId = cache.questionCreatorSetId || "";
+
+  if (!setId) {
+    root.innerHTML = `
+      <section class="card">
+        <h2>問題作成</h2>
+        <p class="muted">問題集が選択されていません。</p>
+        <button class="ghost" data-action="returnQuestionCreatorToAdmin()">問題集管理へ戻る</button>
+      </section>
+    `;
+    return;
+  }
+
+  const data = await api(`/api/admin/question-sets/${setId}/questions`);
+  cache.questionCreatorQuestions = data.questions || [];
+
+  root.innerHTML = `
+    <section class="card question-creator-page">
+      <div class="question-creator-header">
+        <div>
+          <p class="eyebrow">QUESTION BUILDER</p>
+          <h2>問題作成</h2>
+          <p class="muted">対象問題集：${escapeHtml(cache.questionCreatorSetTitle || "選択中の問題集")}</p>
+        </div>
+        <div class="button-list">
+          <button class="ghost" data-action="returnQuestionCreatorToAdmin()">問題集管理へ戻る</button>
+        </div>
+      </div>
+
+      <div id="manualQuestionCreator"></div>
+    </section>
+  `;
+
+  renderManualQuestionCreator(cache.questionCreatorQuestions);
+}
+
 
 
 function inlineMarkdown(text) {
@@ -1648,7 +1717,7 @@ function renderManualQuestionCreator(questions = []) {
   const root = $("manualQuestionCreator");
   if (!root) return;
 
-  const setId = $("adminSetSelect")?.value || "";
+  const setId = $("adminSetSelect")?.value || cache.questionCreatorSetId || "";
   if (!setId) {
     root.innerHTML = `
       <div class="question-builder-empty">
@@ -1663,31 +1732,11 @@ function renderManualQuestionCreator(questions = []) {
   const secondId = `option_${Date.now()}_2`;
 
   root.innerHTML = `
-    <section class="question-builder-grid">
-      <section class="question-preview-panel">
-        <div class="question-builder-sticky">
-          <div class="section-title-row">
-            <h4>プレビュー</h4>
-            <span class="pill">左画面</span>
-          </div>
-
-          <div class="preview-card">
-            <p class="muted">問題文プレビュー</p>
-            <div id="manualQuestionPreviewText" class="markdown-preview"></div>
-
-            <p class="muted mt-12">選択肢プレビュー</p>
-            <div id="manualQuestionPreviewOptions" class="preview-options"></div>
-
-            <p class="muted mt-12">解答解説プレビュー</p>
-            <div id="manualExplanationPreview" class="markdown-preview explanation-preview"></div>
-          </div>
-        </div>
-      </section>
-
+    <section class="question-builder-grid question-builder-grid-reversed">
       <section class="question-editor-panel">
         <div class="section-title-row">
           <h4>問題入力</h4>
-          <span class="pill">右画面</span>
+          <span class="pill">左画面</span>
         </div>
 
         <div class="two-col">
@@ -1709,7 +1758,7 @@ function renderManualQuestionCreator(questions = []) {
 
         <div class="question-editor-section">
           <h5>② 選択肢セクション</h5>
-          <p class="muted">何択でも作成できます。正解の選択肢にチェックを入れてください。複数正解にも対応しています。</p>
+          <p class="muted">4択固定ではなく、何択でも作成できます。正解の選択肢にチェックを入れてください。</p>
           <div id="manualOptionsList" class="question-options-editor">
             ${questionCreatorOptionRow(firstId, "", true)}
             ${questionCreatorOptionRow(secondId, "", false)}
@@ -1726,6 +1775,26 @@ function renderManualQuestionCreator(questions = []) {
         <div class="button-list">
           <button data-action="saveQuestionFromCreator()">問題を保存</button>
           <button class="ghost" data-action="clearQuestionCreatorForm()">入力内容をクリア</button>
+        </div>
+      </section>
+
+      <section class="question-preview-panel">
+        <div class="question-builder-sticky">
+          <div class="section-title-row">
+            <h4>プレビュー</h4>
+            <span class="pill">右画面</span>
+          </div>
+
+          <div class="preview-card">
+            <p class="muted">問題文プレビュー</p>
+            <div id="manualQuestionPreviewText" class="markdown-preview"></div>
+
+            <p class="muted mt-12">選択肢プレビュー</p>
+            <div id="manualQuestionPreviewOptions" class="preview-options"></div>
+
+            <p class="muted mt-12">解答解説プレビュー</p>
+            <div id="manualExplanationPreview" class="markdown-preview explanation-preview"></div>
+          </div>
         </div>
       </section>
     </section>
@@ -1806,12 +1875,11 @@ function removeQuestionCreatorOption(rowId) {
 
 function clearQuestionCreatorForm() {
   if (!confirm("入力中の問題をクリアしますか？")) return;
-  const currentQuestions = [];
-  renderManualQuestionCreator(currentQuestions);
+  renderManualQuestionCreator(cache.questionCreatorQuestions || []);
 }
 
 async function saveQuestionFromCreator() {
-  const setId = $("adminSetSelect")?.value || "";
+  const setId = $("adminSetSelect")?.value || cache.questionCreatorSetId || "";
   if (!setId) return alert("問題集を選択してください。");
 
   const questionText = $("manualQuestionText")?.value.trim() || "";
@@ -1854,7 +1922,11 @@ async function saveQuestionFromCreator() {
     }
 
     showMessage("問題を作成しました。", "success");
-    await selectAdminQuestionSet();
+    if (cache.currentScreen === "questionCreator") {
+      await renderQuestionCreatorScreen();
+    } else {
+      await selectAdminQuestionSet();
+    }
   } catch (e) {
     showMessage(e.message, "error");
   }
