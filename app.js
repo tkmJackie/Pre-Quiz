@@ -18,7 +18,7 @@ let cache = {
 };
 
 
-const DECLARATIVE_ACTIONS = new Set(["assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "clearImportedExcel", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "replyTicket", "saveProfile", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
+const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "clearImportedExcel", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "saveProfile", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
 
 function parseDeclarativeActionArgs(rawArgs) {
   const raw = String(rawArgs || "").trim();
@@ -930,8 +930,8 @@ function showLoginTwoFactorNotice(data) {
     trust.id = "trustDeviceForWeekWrap";
     trust.className = "trust-device-row";
     trust.innerHTML = `
-      <input id="trustDeviceForWeek" class="trust-device-checkbox" type="checkbox" checked>
-      <span class="trust-device-text">このデバイスでは1週間、2要素認証を省略する</span>
+      <input id="trustDeviceForWeek" type="checkbox" checked>
+      <span>このデバイスでは1週間、2要素認証を省略する</span>
     `;
     const buttonList = card.querySelector(".button-list");
     if (buttonList) card.insertBefore(trust, buttonList);
@@ -1138,6 +1138,9 @@ function adminQuestionSetCard() {
         <button class="ghost" data-action="editQuestionSet()">選択中の問題集を編集</button>
         <button class="danger" data-action="deleteQuestionSet()">選択中の問題集を削除</button>
       </div>
+
+      <h3>問題作成</h3>
+      <div id="manualQuestionCreator"></div>
 
       <h3>問題集一覧</h3>
       <div id="questionSetList" class="table-wrap"></div>
@@ -1510,6 +1513,7 @@ async function selectAdminQuestionSet() {
   const id = $("adminSetSelect")?.value;
   if (!id) {
     if ($("questionList")) $("questionList").innerHTML = `<p class="muted">問題集を選択してください。</p>`;
+    renderManualQuestionCreator([]);
     return;
   }
   const data = await api(`/api/admin/question-sets/${id}/questions`);
@@ -1524,7 +1528,338 @@ async function selectAdminQuestionSet() {
       rawHtml(q.options.map(o => `${o.is_correct ? "✅ " : ""}${escapeHtml(shorten(o.option_text, 28))}`).join("<br>"))
     ])
   );
+
+  renderManualQuestionCreator(data.questions || []);
 }
+
+
+function inlineMarkdown(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  return html;
+}
+
+function renderMarkdownPreview(markdown) {
+  const source = String(markdown || "").replace(/\r\n/g, "\n").trim();
+  if (!source) return `<p class="muted">未入力です。</p>`;
+
+  const lines = source.split("\n");
+  const html = [];
+  let paragraph = [];
+  let list = [];
+  let code = [];
+  let inCode = false;
+
+  function flushParagraph() {
+    if (!paragraph.length) return;
+    html.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  }
+
+  function flushList() {
+    if (!list.length) return;
+    html.push(`<ul>${list.map(item => `<li>${inlineMarkdown(item)}</li>`).join("")}</ul>`);
+    list = [];
+  }
+
+  function flushCode() {
+    if (!code.length) return;
+    html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+    code = [];
+  }
+
+  for (const line of lines) {
+    const raw = String(line || "");
+    const trimmed = raw.trim();
+
+    if (trimmed.startsWith("```")) {
+      if (inCode) {
+        flushCode();
+        inCode = false;
+      } else {
+        flushParagraph();
+        flushList();
+        inCode = true;
+      }
+      continue;
+    }
+
+    if (inCode) {
+      code.push(raw);
+      continue;
+    }
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(4, heading[1].length + 2);
+      html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      flushParagraph();
+      list.push(bullet[1]);
+      continue;
+    }
+
+    paragraph.push(trimmed);
+  }
+
+  flushCode();
+  flushParagraph();
+  flushList();
+
+  return html.join("");
+}
+
+function questionCreatorOptionRow(rowId, text = "", checked = false) {
+  return `
+    <div class="question-option-row" data-row-id="${escapeAttr(rowId)}">
+      <label class="option-correct-check">
+        <input type="checkbox" class="manual-option-correct" ${checked ? "checked" : ""}>
+        <span>正解</span>
+      </label>
+      <input class="manual-option-text" value="${escapeAttr(text)}" placeholder="選択肢を入力">
+      <button type="button" class="ghost mini" data-action="removeQuestionCreatorOption('${actionArg(rowId)}')">削除</button>
+    </div>
+  `;
+}
+
+function nextManualQuestionNumber(questions = []) {
+  const numbers = (questions || [])
+    .map(q => Number(q.number || 0))
+    .filter(n => Number.isFinite(n) && n > 0);
+  if (!numbers.length) return (questions || []).length + 1;
+  return Math.max(...numbers) + 1;
+}
+
+function renderManualQuestionCreator(questions = []) {
+  const root = $("manualQuestionCreator");
+  if (!root) return;
+
+  const setId = $("adminSetSelect")?.value || "";
+  if (!setId) {
+    root.innerHTML = `
+      <div class="question-builder-empty">
+        問題作成を行うには、先に問題集を選択してください。
+      </div>
+    `;
+    return;
+  }
+
+  const nextNumber = nextManualQuestionNumber(questions);
+  const firstId = `option_${Date.now()}_1`;
+  const secondId = `option_${Date.now()}_2`;
+
+  root.innerHTML = `
+    <section class="question-builder-grid">
+      <section class="question-preview-panel">
+        <div class="question-builder-sticky">
+          <div class="section-title-row">
+            <h4>プレビュー</h4>
+            <span class="pill">左画面</span>
+          </div>
+
+          <div class="preview-card">
+            <p class="muted">問題文プレビュー</p>
+            <div id="manualQuestionPreviewText" class="markdown-preview"></div>
+
+            <p class="muted mt-12">選択肢プレビュー</p>
+            <div id="manualQuestionPreviewOptions" class="preview-options"></div>
+
+            <p class="muted mt-12">解答解説プレビュー</p>
+            <div id="manualExplanationPreview" class="markdown-preview explanation-preview"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="question-editor-panel">
+        <div class="section-title-row">
+          <h4>問題入力</h4>
+          <span class="pill">右画面</span>
+        </div>
+
+        <div class="two-col">
+          <div>
+            <label>番号</label>
+            <input id="manualQuestionNumber" type="number" min="1" value="${nextNumber}">
+          </div>
+          <div>
+            <label>分類</label>
+            <input id="manualQuestionCategory" placeholder="例：情報セキュリティ">
+          </div>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>① 問題文セクション</h5>
+          <p class="muted">Markdown形式で入力できます。見出し、箇条書き、太字、コード記法に対応しています。</p>
+          <textarea id="manualQuestionText" rows="8" placeholder="# 問題文&#10;&#10;以下のうち、正しいものを選んでください。"></textarea>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>② 選択肢セクション</h5>
+          <p class="muted">何択でも作成できます。正解の選択肢にチェックを入れてください。複数正解にも対応しています。</p>
+          <div id="manualOptionsList" class="question-options-editor">
+            ${questionCreatorOptionRow(firstId, "", true)}
+            ${questionCreatorOptionRow(secondId, "", false)}
+          </div>
+          <button type="button" class="ghost" data-action="addQuestionCreatorOption()">選択肢を追加</button>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>③ 解答解説セクション</h5>
+          <p class="muted">Markdown形式で入力できます。</p>
+          <textarea id="manualExplanation" rows="7" placeholder="## 解説&#10;&#10;この選択肢が正解となる理由を入力してください。"></textarea>
+        </div>
+
+        <div class="button-list">
+          <button data-action="saveQuestionFromCreator()">問題を保存</button>
+          <button class="ghost" data-action="clearQuestionCreatorForm()">入力内容をクリア</button>
+        </div>
+      </section>
+    </section>
+  `;
+
+  bindQuestionCreatorEvents();
+  updateQuestionCreatorPreview();
+}
+
+function bindQuestionCreatorEvents() {
+  const root = $("manualQuestionCreator");
+  if (!root || root.dataset.bound === "1") return;
+  root.dataset.bound = "1";
+
+  root.addEventListener("input", () => updateQuestionCreatorPreview());
+  root.addEventListener("change", () => updateQuestionCreatorPreview());
+}
+
+function collectQuestionCreatorOptions() {
+  return Array.from(document.querySelectorAll("#manualOptionsList .question-option-row"))
+    .map((row) => ({
+      row,
+      text: row.querySelector(".manual-option-text")?.value.trim() || "",
+      isCorrect: row.querySelector(".manual-option-correct")?.checked === true
+    }));
+}
+
+function updateQuestionCreatorPreview() {
+  const questionPreview = $("manualQuestionPreviewText");
+  const optionsPreview = $("manualQuestionPreviewOptions");
+  const explanationPreview = $("manualExplanationPreview");
+  if (!questionPreview || !optionsPreview || !explanationPreview) return;
+
+  questionPreview.innerHTML = renderMarkdownPreview($("manualQuestionText")?.value || "");
+  explanationPreview.innerHTML = renderMarkdownPreview($("manualExplanation")?.value || "");
+
+  const options = collectQuestionCreatorOptions();
+  const visibleOptions = options.filter(option => option.text);
+
+  if (!visibleOptions.length) {
+    optionsPreview.innerHTML = `<p class="muted">選択肢が未入力です。</p>`;
+    return;
+  }
+
+  optionsPreview.innerHTML = visibleOptions.map((option, index) => `
+    <div class="preview-option ${option.isCorrect ? "correct" : ""}">
+      <span class="preview-option-letter">${String.fromCharCode(65 + index)}</span>
+      <span>${escapeHtml(option.text)}</span>
+      ${option.isCorrect ? `<strong>正解</strong>` : ""}
+    </div>
+  `).join("");
+}
+
+function addQuestionCreatorOption() {
+  const list = $("manualOptionsList");
+  if (!list) return;
+
+  const rowId = `option_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  list.insertAdjacentHTML("beforeend", questionCreatorOptionRow(rowId, "", false));
+  updateQuestionCreatorPreview();
+
+  const rows = list.querySelectorAll(".question-option-row");
+  const last = rows[rows.length - 1];
+  last?.querySelector(".manual-option-text")?.focus();
+}
+
+function removeQuestionCreatorOption(rowId) {
+  const rows = Array.from(document.querySelectorAll("#manualOptionsList .question-option-row"));
+  if (rows.length <= 2) {
+    alert("選択肢は最低2つ必要です。");
+    return;
+  }
+
+  const row = rows.find(item => item.dataset.rowId === rowId);
+  if (row) row.remove();
+  updateQuestionCreatorPreview();
+}
+
+function clearQuestionCreatorForm() {
+  if (!confirm("入力中の問題をクリアしますか？")) return;
+  const currentQuestions = [];
+  renderManualQuestionCreator(currentQuestions);
+}
+
+async function saveQuestionFromCreator() {
+  const setId = $("adminSetSelect")?.value || "";
+  if (!setId) return alert("問題集を選択してください。");
+
+  const questionText = $("manualQuestionText")?.value.trim() || "";
+  const explanation = $("manualExplanation")?.value.trim() || "";
+  const category = $("manualQuestionCategory")?.value.trim() || "";
+  const number = Number($("manualQuestionNumber")?.value || 0) || null;
+
+  const options = collectQuestionCreatorOptions()
+    .map(option => ({
+      text: option.text,
+      isCorrect: option.isCorrect
+    }))
+    .filter(option => option.text);
+
+  const correctCount = options.filter(option => option.isCorrect).length;
+
+  if (!questionText) return alert("問題文を入力してください。");
+  if (options.length < 2) return alert("選択肢は最低2つ入力してください。");
+  if (correctCount < 1) return alert("正解の選択肢にチェックを入れてください。");
+
+  try {
+    const result = await api(`/api/admin/question-sets/${setId}/import`, {
+      method: "POST",
+      body: JSON.stringify({
+        replace: false,
+        rows: [{
+          number,
+          category,
+          questionText,
+          explanation,
+          correctCount,
+          options
+        }]
+      })
+    });
+
+    if (Array.isArray(result.errors) && result.errors.length) {
+      showMessage(result.errors.join("\n"), "error");
+      return;
+    }
+
+    showMessage("問題を作成しました。", "success");
+    await selectAdminQuestionSet();
+  } catch (e) {
+    showMessage(e.message, "error");
+  }
+}
+
 
 
 function toApiDateTime(value) {
