@@ -25,7 +25,7 @@ let cache = {
 };
 
 
-const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "chooseQuestionCreatorImage", "clearImportedExcel", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestion", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "returnQuestionEditorToAdmin", "saveProfile", "saveQuestionEditor", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showQuestionEditorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
+const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "applyQuestionMarkdownToForm", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "chooseQuestionCreatorImage", "clearImportedExcel", "clearQuestionBulkMarkdown", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestion", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importExcel", "loadAnswers", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "returnQuestionEditorToAdmin", "saveProfile", "saveQuestionEditor", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showQuestionEditorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
 
 function parseDeclarativeActionArgs(rawArgs) {
   const raw = String(rawArgs || "").trim();
@@ -1727,6 +1727,8 @@ function renderManualQuestionEditor(question) {
           <span class="pill">編集</span>
         </div>
 
+        ${renderQuestionBulkMarkdownBox("既存の内容を、貼り付けたMarkdownで上書きできます。")}
+
         <div class="two-col">
           <div>
             <label>番号</label>
@@ -2229,6 +2231,8 @@ function renderManualQuestionCreator(questions = [], draft = {}) {
           <span class="pill">左画面</span>
         </div>
 
+        ${renderQuestionBulkMarkdownBox()}
+
         <div class="two-col">
           <div>
             <label>番号</label>
@@ -2310,12 +2314,249 @@ function renderManualQuestionCreator(questions = [], draft = {}) {
   updateQuestionCreatorPreview();
 }
 
+
+let questionMarkdownAutoFillTimer = null;
+
+function renderQuestionBulkMarkdownBox(note = "Markdown形式の問題を貼り付けると、下の入力欄へ自動反映します。") {
+  return `
+    <div class="question-bulk-md-box">
+      <div class="section-title-row">
+        <h5>MD一括入力</h5>
+        <span class="pill">自動入力</span>
+      </div>
+      <p class="muted">${escapeHtml(note)}</p>
+      <textarea id="manualQuestionBulkMarkdown" rows="8" placeholder="例：
+番号: 9
+分類: CySA+ (CS0-003)
+
+## 問題
+# 問題文
+
+以下のうち、正しいものを選んでください。
+
+## 選択肢
+- [x] 正しい選択肢
+- [ ] 誤っている選択肢
+
+## 解説
+この選択肢が正解となる理由を入力してください。"></textarea>
+      <div class="button-list">
+        <button type="button" class="ghost" data-action="applyQuestionMarkdownToForm()">MDを入力欄へ反映</button>
+        <button type="button" class="ghost" data-action="clearQuestionBulkMarkdown()">MD欄をクリア</button>
+      </div>
+    </div>
+  `;
+}
+
+function scheduleQuestionMarkdownAutoFill() {
+  clearTimeout(questionMarkdownAutoFillTimer);
+  questionMarkdownAutoFillTimer = setTimeout(() => {
+    applyQuestionMarkdownToForm(false);
+  }, 350);
+}
+
+function normalizeMarkdownCompare(value) {
+  return String(value || "")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/^[\s\-*・]+/, "")
+    .replace(/^[A-Za-zＡ-Ｚａ-ｚ0-9０-９ア-ン]\s*[\).．、:：]\s*/, "")
+    .replace(/\s+/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function getMarkdownSectionName(line) {
+  const text = String(line || "").trim().replace(/^#+\s*/, "").trim();
+  const normalized = text.replace(/\s+/g, "");
+
+  if (/^(番号|No|NO|No\.|QuestionNo|問題番号)$/i.test(normalized)) return "number";
+  if (/^(分類|カテゴリ|カテゴリー|Category)$/i.test(normalized)) return "category";
+  if (/^(問題|問題文|設問|問題文セクション|Question)$/i.test(normalized)) return "question";
+  if (/^(選択肢|選択肢セクション|Choices|Options)$/i.test(normalized)) return "options";
+  if (/^(解答|答え|正解|Answer|CorrectAnswer)$/i.test(normalized)) return "answer";
+  if (/^(解説|解答解説|解答解説セクション|Explanation)$/i.test(normalized)) return "explanation";
+  return "";
+}
+
+function splitMarkdownQuestionSections(markdown) {
+  const result = {
+    number: "",
+    category: "",
+    question: [],
+    options: [],
+    answer: [],
+    explanation: [],
+    preface: []
+  };
+
+  const lines = String(markdown || "").replace(/\r\n/g, "\n").split("\n");
+  let current = "preface";
+
+  for (const line of lines) {
+    const heading = String(line || "").match(/^\s{0,3}#{1,6}\s+(.+?)\s*$/);
+    if (heading) {
+      const section = getMarkdownSectionName(line);
+      if (section) {
+        current = section;
+        continue;
+      }
+    }
+
+    const keyValue = String(line || "").match(/^\s*(番号|No\.?|分類|カテゴリ|カテゴリー|Category)\s*[:：]\s*(.+?)\s*$/i);
+    if (keyValue) {
+      const key = keyValue[1].toLowerCase();
+      if (key.includes("no") || key.includes("番号")) result.number = keyValue[2].trim();
+      else result.category = keyValue[2].trim();
+      continue;
+    }
+
+    if (!Array.isArray(result[current])) {
+      result[current] = String(line || "").trim();
+      current = "preface";
+      continue;
+    }
+
+    result[current].push(line);
+  }
+
+  if (!result.question.join("").trim() && result.preface.join("").trim()) {
+    result.question = result.preface;
+  }
+
+  return result;
+}
+
+function parseQuestionOptionLine(line) {
+  const raw = String(line || "").trim();
+  if (!raw) return null;
+
+  let match = raw.match(/^[-*・]\s*\[(x|X|✓|✔|○|o|O|true|TRUE|1|正解|\s)\]\s*(.+)$/);
+  if (match) {
+    return { text: match[2].trim(), isCorrect: !/^\s$/.test(match[1]), label: "" };
+  }
+
+  match = raw.match(/^[-*・]\s*(?:正解|○|✓|✔)\s*[:：]?\s*(.+)$/);
+  if (match) return { text: match[1].trim(), isCorrect: true, label: "" };
+
+  match = raw.match(/^[-*・]\s*(.+)$/);
+  if (match) return { text: match[1].trim(), isCorrect: false, label: "" };
+
+  match = raw.match(/^([A-Za-zＡ-Ｚａ-ｚ0-9０-９ア-ン])\s*[\).．、:：]\s*(.+)$/);
+  if (match) return { text: match[2].trim(), isCorrect: false, label: match[1].trim() };
+
+  return null;
+}
+
+function parseQuestionOptionsFromMarkdown(lines) {
+  const options = [];
+  let current = null;
+
+  for (const line of lines || []) {
+    const parsed = parseQuestionOptionLine(line);
+    if (parsed) {
+      if (current) options.push(current);
+      current = parsed;
+      continue;
+    }
+
+    if (current && String(line || "").trim()) {
+      current.text += `\n${line}`;
+    }
+  }
+
+  if (current) options.push(current);
+  return options;
+}
+
+function applyAnswerSectionToOptions(options, answerText) {
+  const answer = String(answerText || "").trim();
+  if (!answer || !options.length) return options;
+
+  const normalizedAnswer = normalizeMarkdownCompare(answer);
+  const answerLabels = new Set(answer.split(/[\s,，、／/]+/).map(value => value.trim()).filter(Boolean));
+
+  return options.map((option) => {
+    const normalizedOption = normalizeMarkdownCompare(option.text);
+    const labelMatched = option.label && answerLabels.has(option.label);
+    const textMatched = normalizedOption && normalizedAnswer.includes(normalizedOption);
+    const answerMatched = normalizedAnswer && normalizedOption.includes(normalizedAnswer);
+    return { ...option, isCorrect: option.isCorrect || labelMatched || textMatched || answerMatched };
+  });
+}
+
+function parseQuestionMarkdownForAutoFill(markdown) {
+  const sections = splitMarkdownQuestionSections(markdown);
+  const questionText = sections.question.join("\n").trim();
+  const explanation = sections.explanation.join("\n").trim();
+  let options = parseQuestionOptionsFromMarkdown(sections.options);
+  options = applyAnswerSectionToOptions(options, sections.answer.join("\n"));
+
+  return {
+    number: String(sections.number || "").trim(),
+    category: String(sections.category || "").trim(),
+    questionText,
+    explanation,
+    options
+  };
+}
+
+function setQuestionCreatorOptions(options) {
+  const list = $("manualOptionsList");
+  if (!list) return;
+
+  const normalizedOptions = Array.isArray(options) && options.length
+    ? options
+    : [
+        { text: "", isCorrect: true },
+        { text: "", isCorrect: false }
+      ];
+
+  if (normalizedOptions.length < 2) normalizedOptions.push({ text: "", isCorrect: false });
+
+  list.innerHTML = normalizedOptions.map((option, index) => {
+    const rowId = `option_${Date.now()}_${index}_${Math.random().toString(16).slice(2)}`;
+    return questionCreatorOptionRow(rowId, option.text || "", option.isCorrect === true);
+  }).join("");
+}
+
+function applyQuestionMarkdownToForm(showNotice = true) {
+  const source = $("manualQuestionBulkMarkdown")?.value || "";
+  if (!source.trim()) return;
+
+  const parsed = parseQuestionMarkdownForAutoFill(source);
+
+  if (parsed.number && $("manualQuestionNumber")) {
+    const numeric = Number(parsed.number.replace(/[^\d]/g, ""));
+    if (Number.isFinite(numeric) && numeric > 0) $("manualQuestionNumber").value = numeric;
+  }
+
+  if (parsed.category && $("manualQuestionCategory")) $("manualQuestionCategory").value = parsed.category;
+  if (parsed.questionText && $("manualQuestionText")) $("manualQuestionText").value = parsed.questionText;
+  if (parsed.explanation && $("manualExplanation")) $("manualExplanation").value = parsed.explanation;
+  if (parsed.options.length) setQuestionCreatorOptions(parsed.options);
+
+  updateQuestionCreatorPreview();
+  if (showNotice) showMessage("Markdownを入力欄へ反映しました。", "success");
+}
+
+function clearQuestionBulkMarkdown() {
+  const input = $("manualQuestionBulkMarkdown");
+  if (input) input.value = "";
+}
+
 function bindQuestionCreatorEvents() {
   const root = $("manualQuestionCreator");
   if (!root || root.dataset.bound === "1") return;
   root.dataset.bound = "1";
 
-  root.addEventListener("input", () => updateQuestionCreatorPreview());
+  root.addEventListener("input", (event) => {
+    if (event.target?.id === "manualQuestionBulkMarkdown") {
+      scheduleQuestionMarkdownAutoFill();
+      return;
+    }
+
+    updateQuestionCreatorPreview();
+  });
 
   root.addEventListener("change", (event) => {
     if (event.target?.id === "manualImageFileInput") {

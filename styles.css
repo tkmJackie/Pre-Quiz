@@ -1434,3 +1434,28 @@ button:disabled {
     flex-wrap: wrap;
   }
 }
+
+
+/* =========================
+   Question Markdown Auto Fill
+========================= */
+
+.question-bulk-md-box {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.question-bulk-md-box h5 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.question-bulk-md-box textarea {
+  min-height: 180px;
+  margin-top: 10px;
+  background: #ffffff;
+  line-height: 1.7;
+}
