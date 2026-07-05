@@ -1645,3 +1645,46 @@ button:disabled {
   background: linear-gradient(90deg, #60a5fa, #2563eb);
   border-radius: 999px;
 }
+
+
+/* =========================
+   Markdown LaTeX Math
+========================= */
+
+.math-inline {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  vertical-align: middle;
+}
+
+.math-block {
+  display: block;
+  max-width: 100%;
+  margin: 14px 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.markdown-preview .math-block mjx-container,
+.quiz-markdown .math-block mjx-container {
+  margin: 0;
+}
+
+.markdown-table-wrap th.md-align-left,
+.markdown-table-wrap td.md-align-left {
+  text-align: left;
+}
+
+.markdown-table-wrap th.md-align-center,
+.markdown-table-wrap td.md-align-center {
+  text-align: center;
+}
+
+.markdown-table-wrap th.md-align-right,
+.markdown-table-wrap td.md-align-right {
+  text-align: right;
+}

@@ -1,76 +1,109 @@
-# 問題編集「次へ」高速化版 v20260705-09
+# Markdown + LaTeX 数式対応版 v20260705-10
 
 ## 置き換えるファイル
 
 ```text
 app.js
 styles.css
-worker-single.js
 ```
 
-## 修正内容
-
-問題編集画面の「次の問題を修正」「保存して次の問題へ」を高速化しました。
-
-## 何が速くなるか
+## 追加するファイル
 
 ```text
-変更前:
-  次へボタン
-  ↓
-  全問題一覧を取得
-  ↓
-  次の問題を探す
-  ↓
-  次の問題を再取得
-  ↓
-  表示
-
-変更後:
-  次へボタン
-  ↓
-  Worker側で次の1問だけ取得
-  ↓
-  取得済みの問題をそのまま表示
+vendor/mathjax-config.js
 ```
 
-全問題一覧を読み込まないため、問題数が多くても次の画面に移動しやすくなります。
+## 別途配置が必要なファイル
 
-## 利用API
+MathJax本体を以下に配置してください。
 
 ```text
-POST /api/admin/questions/{questionId}/next
+vendor/mathjax/tex-svg.js
 ```
 
-このAPIが必要なので、worker-single.js も必ずCloudflare Workerへ反映してください。
+MathJaxはローカル配置推奨です。CDNを使う場合はCSP変更が必要になります。
 
-## 反映確認
+## index.html に追加するコード
 
-問題編集画面で以下が表示されれば最新版です。
-
-```text
-編集 / 高速次へ v20260705-09
-```
-
-コンソールには以下が出ます。
-
-```text
-Zerquor LMS: fast next editor v20260705-09 loaded
-```
-
-## index.html のキャッシュ対策
+`app.js` より前に、以下を追加してください。
 
 ```html
-<link rel="stylesheet" href="styles.css?v=20260705-09">
-<script src="app.js?v=20260705-09"></script>
+<script src="vendor/mathjax-config.js?v=20260705-10"></script>
+<script defer src="vendor/mathjax/tex-svg.js?v=20260705-10"></script>
 ```
 
-## 重要
+既存の読み込みは以下のようにしてください。
 
-v20260705-08 は `/next` を使わずに既存APIで全問題一覧から次の問題を探すため、問題数が多いと遅くなります。
+```html
+<link rel="stylesheet" href="styles.css?v=20260705-10">
+<script src="app.js?v=20260705-10"></script>
+```
 
-高速化するには、今回の worker-single.js をCloudflare Workerに反映して、v20260705-09 を使ってください。
+## 使える記法
 
-## SQL
+### インライン数式
+
+```md
+重みは $w$ とし、学習率は $\eta$ とする。
+```
+
+または、
+
+```md
+重みは \(w\) とし、学習率は \(\eta\) とする。
+```
+
+### ブロック数式
+
+```md
+$$
+L(w) = \frac{1}{n}\sum_{i=1}^{n}(y_i - wx_i)^2
+$$
+```
+
+または、
+
+```md
+\[
+P(A|B) = \frac{P(B|A)P(A)}{P(B)}
+\]
+```
+
+## 対応場所
+
+```text
+・問題文
+・選択肢
+・解答解説
+・HTMLプレビュー
+・受講者の問題表示画面
+・回答結果画面
+```
+
+## 対応できる例
+
+```md
+$$
+A =
+\begin{bmatrix}
+1 & 2 \\
+3 & 4
+\end{bmatrix}
+$$
+```
+
+```md
+$$
+\nabla_w L(w) =
+-\frac{2}{n}\sum_{i=1}^{n}x_i(y_i - wx_i)
+$$
+```
+
+## 注意
+
+MathJax本体が未配置の場合でも、LaTeX記法は画面に表示されます。
+ただし、きれいな数式レンダリングには `vendor/mathjax/tex-svg.js` が必要です。
+
+## SQL / Worker
 
 変更不要です。
