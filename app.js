@@ -1661,12 +1661,56 @@ async function fetchQuestionForEdit(questionId) {
   return data.question;
 }
 
-async function fetchNextQuestionForEdit(questionId) {
-  const data = await api(`/api/admin/questions/${encodeURIComponent(questionId)}/next`, {
-    method: "POST",
-    body: JSON.stringify({})
+function sortQuestionsForEditorNavigation(questions = []) {
+  return [...questions].sort((a, b) => {
+    const aSort = Number(a.sort_order || a.number || 0);
+    const bSort = Number(b.sort_order || b.number || 0);
+    if (aSort !== bSort) return aSort - bSort;
+
+    const aNumber = Number(a.number || 0);
+    const bNumber = Number(b.number || 0);
+    if (aNumber !== bNumber) return aNumber - bNumber;
+
+    return String(a.created_at || "").localeCompare(String(b.created_at || "")) || String(a.id || "").localeCompare(String(b.id || ""));
   });
-  return data.question || null;
+}
+
+async function fetchNextQuestionForEditFallback(questionId, originalError) {
+  const setId = cache.questionEditSetId || cache.questionCreatorSetId || $("adminSetSelect")?.value || "";
+  if (!setId) throw originalError;
+
+  const data = await api(`/api/admin/question-sets/${encodeURIComponent(setId)}/questions`);
+  const questions = sortQuestionsForEditorNavigation(data.questions || []);
+
+  if (!questions.length) return null;
+
+  const currentIndex = questions.findIndex(q => String(q.id || "") === String(questionId || ""));
+  if (currentIndex >= 0) {
+    const next = questions[currentIndex + 1];
+    return next?.id ? await fetchQuestionForEdit(next.id) : null;
+  }
+
+  const currentNumber = Number($("manualQuestionNumber")?.value || 0);
+  if (Number.isFinite(currentNumber) && currentNumber > 0) {
+    const next = questions.find(q => Number(q.number || 0) > currentNumber);
+    return next?.id ? await fetchQuestionForEdit(next.id) : null;
+  }
+
+  return null;
+}
+
+async function fetchNextQuestionForEdit(questionId) {
+  try {
+    const data = await api(`/api/admin/questions/${encodeURIComponent(questionId)}/next`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    return data.question || null;
+  } catch (error) {
+    // Worker側に /next API がまだ反映されていない場合は、既存の問題一覧APIで次の問題を探す。
+    // これにより「Not Found」で保存して次へが止まる問題を回避する。
+    return await fetchNextQuestionForEditFallback(questionId, error);
+  }
 }
 
 async function showNextQuestionEditorView() {
@@ -1760,7 +1804,7 @@ function renderManualQuestionEditor(question) {
       <section class="question-editor-panel">
         <div class="section-title-row">
           <h4>問題入力</h4>
-          <span class="pill">編集 / 次へ対応 v20260705-05</span>
+          <span class="pill">編集 / 次へ対応 v20260705-06</span>
         </div>
 
         ${renderQuestionBulkMarkdownBox("既存の内容を、貼り付けたMarkdownで上書きできます。")}

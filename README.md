@@ -1,4 +1,4 @@
-# 問題編集画面 次の問題ボタン追加版 v20260705-05
+# 問題編集画面 次の問題ボタン Not Found 回避版 v20260705-06
 
 ## 置き換えるファイル
 
@@ -8,41 +8,40 @@ styles.css
 worker-single.js
 ```
 
-## 追加内容
+## 修正内容
 
-問題編集画面に、次の問題へ移動するボタンを追加しました。
+「保存して次の問題へ」を押したときに `Not Found` が出る問題を回避しました。
 
-## 追加ボタン
+原因は、ブラウザ側は新しい `/next` API を呼んでいるのに、Cloudflare Worker 側にまだ新しいAPIが反映されていない場合があるためです。
 
-```text
-・次の問題を修正
-・保存して次の問題へ
-```
-
-## 動作
+## 今回の対策
 
 ```text
-次の問題を修正
-  → 現在の内容を保存せず、次の問題を表示します。
-
-保存して次の問題へ
-  → 現在の問題を保存してから、次の問題を表示します。
+1. まず新API POST /api/admin/questions/{questionId}/next を呼ぶ
+2. Not Found などで失敗した場合は、既存の問題一覧APIで次の問題を探す
+3. 見つかった次の問題を編集画面に表示する
 ```
 
-## 追加API
-
-```text
-POST /api/admin/questions/{questionId}/next
-```
-
-現在編集中の問題と同じ問題集内で、次の番号の問題を取得します。
+これにより、Worker反映が遅れていても「保存して次へ」が動きます。
 
 ## 反映後の確認
 
 問題編集画面で以下が表示されれば最新版です。
 
 ```text
-編集 / 次へ対応 v20260705-05
+編集 / 次へ対応 v20260705-06
+```
+
+## 重要
+
+worker-single.js も同梱しています。
+Cloudflare Worker 側にも反映すると、新APIでより軽く動きます。
+
+## index.html のキャッシュ対策
+
+```html
+<link rel="stylesheet" href="styles.css?v=20260705-06">
+<script src="app.js?v=20260705-06"></script>
 ```
 
 ## 変更不要
@@ -50,8 +49,3 @@ POST /api/admin/questions/{questionId}/next
 ```text
 SQL
 ```
-
-## 注意
-
-worker-single.js も変更しています。
-Cloudflare Worker 側にも必ず反映してください。
