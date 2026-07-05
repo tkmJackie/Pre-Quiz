@@ -1,4 +1,4 @@
-# 問題編集画面 次の問題ボタン Not Found 回避版 v20260705-06
+# CSP対応・保存して次へ Not Found 回避版 v20260705-07
 
 ## 置き換えるファイル
 
@@ -10,42 +10,41 @@ worker-single.js
 
 ## 修正内容
 
-「保存して次の問題へ」を押したときに `Not Found` が出る問題を回避しました。
-
-原因は、ブラウザ側は新しい `/next` API を呼んでいるのに、Cloudflare Worker 側にまだ新しいAPIが反映されていない場合があるためです。
-
-## 今回の対策
-
 ```text
-1. まず新API POST /api/admin/questions/{questionId}/next を呼ぶ
-2. Not Found などで失敗した場合は、既存の問題一覧APIで次の問題を探す
-3. 見つかった次の問題を編集画面に表示する
+・進捗バーの inline style を削除
+・Content Security Policy の style-src 'self' でも進捗表示できるように変更
+・native progress 要素で進捗率を表示
+・保存して次へで /next が Not Found の場合、既存APIで次の問題を探す fallback を維持
 ```
 
-これにより、Worker反映が遅れていても「保存して次へ」が動きます。
+## 反映確認
 
-## 反映後の確認
-
-問題編集画面で以下が表示されれば最新版です。
+画面に以下が表示されれば最新版です。
 
 ```text
-編集 / 次へ対応 v20260705-06
+自動入力 / 一括登録 v20260705-07
+編集 / 次へ対応 v20260705-07
 ```
 
-## 重要
+ブラウザコンソールには以下が出ます。
 
-worker-single.js も同梱しています。
-Cloudflare Worker 側にも反映すると、新APIでより軽く動きます。
+```text
+Zerquor LMS: csp-safe progress and next fallback v20260705-07 loaded
+```
 
 ## index.html のキャッシュ対策
 
 ```html
-<link rel="stylesheet" href="styles.css?v=20260705-06">
-<script src="app.js?v=20260705-06"></script>
+<link rel="stylesheet" href="styles.css?v=20260705-07">
+<script src="app.js?v=20260705-07"></script>
 ```
 
-## 変更不要
+## Cloudflare Worker
 
-```text
-SQL
-```
+worker-single.js も反映してください。
+Worker側に反映すれば `/next` API が使われます。
+反映前でも、フロント側のfallbackで動作します。
+
+## SQL
+
+変更不要です。
