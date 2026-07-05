@@ -1,4 +1,4 @@
-console.info("Zerquor LMS: Markdown LaTeX MathJax v20260705-10 loaded");
+console.info("Zerquor LMS: Markdown LaTeX fix v20260705-11 loaded");
 const API_BASE = "https://cct-english-api.tkm12325.workers.dev";
 const STORAGE_KEY = "cct.quiz.enterprise.session.v2";
 const TRUSTED_DEVICE_KEY = "pre.quiz.trusted_device.v1";
@@ -1769,7 +1769,7 @@ function renderManualQuestionEditor(question) {
       <section class="question-editor-panel">
         <div class="section-title-row">
           <h4>問題入力</h4>
-          <span class="pill">編集 / 数式対応 v20260705-10</span>
+          <span class="pill">編集 / 数式対応 修正版 v20260705-11</span>
         </div>
 
         ${renderQuestionBulkMarkdownBox("既存の内容を、貼り付けたMarkdownで上書きできます。")}
@@ -2087,7 +2087,6 @@ function registerInlineToken(tokens, html) {
   return token;
 }
 
-
 function inlineMarkdown(text) {
   const tokens = [];
   let source = String(text || "");
@@ -2338,12 +2337,212 @@ function renderMarkdownPreview(markdown) {
   return html.join("");
 }
 
+function questionCreatorOptionRow(rowId, text = "", checked = false) {
+  return `
+    <div class="question-option-row" data-row-id="${escapeAttr(rowId)}">
+      <label class="option-correct-check">
+        <input type="checkbox" class="manual-option-correct" ${checked ? "checked" : ""}>
+        <span>正解</span>
+      </label>
+      <textarea class="manual-option-text image-paste-target" rows="2" placeholder="選択肢を入力。図を貼り付ける場合は、ここに画像をペーストしてください。">${escapeHtml(text)}</textarea>
+      <div class="option-row-actions">
+        <button type="button" class="ghost mini" data-action="chooseQuestionCreatorImage('option:${actionArg(rowId)}')">図を追加</button>
+        <button type="button" class="ghost mini" data-action="removeQuestionCreatorOption('${actionArg(rowId)}')">削除</button>
+      </div>
+    </div>
+  `;
+}
+
+function nextManualQuestionNumber(questions = []) {
+  const numbers = (questions || [])
+    .map(q => Number(q.number || 0))
+    .filter(n => Number.isFinite(n) && n > 0);
+  if (!numbers.length) return (questions || []).length + 1;
+  return Math.max(...numbers) + 1;
+}
+
+function setQuestionCreatorNumberCacheFromQuestions(questions = []) {
+  const list = Array.isArray(questions) ? questions : [];
+  cache.questionCreatorQuestions = list;
+  cache.questionCreatorQuestionCount = list.length;
+  cache.questionCreatorNextNumber = nextManualQuestionNumber(list);
+
+  const categories = list
+    .map(q => String(q.category || "").trim())
+    .filter(Boolean);
+  if (categories.length) {
+    cache.questionCreatorLastCategory = categories[categories.length - 1];
+  }
+}
+
+function bumpQuestionCreatorNumberCache(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const currentNext = Number(cache.questionCreatorNextNumber || 1) || 1;
+  const maxNumber = Math.max(0, ...list.map(row => Number(row?.number || 0)).filter(n => Number.isFinite(n)));
+
+  if (maxNumber > 0) {
+    cache.questionCreatorNextNumber = Math.max(currentNext, maxNumber + 1);
+  } else {
+    cache.questionCreatorNextNumber = currentNext + list.length;
+  }
+
+  cache.questionCreatorQuestionCount = Number(cache.questionCreatorQuestionCount || 0) + list.length;
+
+  const lastCategory = [...list]
+    .reverse()
+    .map(row => String(row?.category || "").trim())
+    .find(Boolean);
+  if (lastCategory) cache.questionCreatorLastCategory = lastCategory;
+}
+
+async function loadQuestionCreatorSummary(setId) {
+  const fallback = {
+    questionCount: Number(cache.questionCreatorQuestionCount || 0),
+    nextNumber: Number(cache.questionCreatorNextNumber || 1) || nextManualQuestionNumber(cache.questionCreatorQuestions || []),
+    lastCategory: cache.questionCreatorLastCategory || ""
+  };
+
+  if (!setId) return fallback;
+
+  try {
+    const data = await api(`/api/admin/question-sets/${encodeURIComponent(setId)}/summary`);
+    const nextNumber = Number(data.nextNumber || 0);
+    const questionCount = Number(data.questionCount || 0);
+
+    if (Number.isFinite(nextNumber) && nextNumber > 0) cache.questionCreatorNextNumber = nextNumber;
+    if (Number.isFinite(questionCount) && questionCount >= 0) cache.questionCreatorQuestionCount = questionCount;
+    if (data.lastCategory) cache.questionCreatorLastCategory = String(data.lastCategory || "");
+
+    return {
+      questionCount: cache.questionCreatorQuestionCount,
+      nextNumber: cache.questionCreatorNextNumber,
+      lastCategory: cache.questionCreatorLastCategory
+    };
+  } catch (error) {
+    // Workerが未更新の場合でも、既存のキャッシュからナンバリングを維持する
+    return fallback;
+  }
+}
+
+function renderManualQuestionCreator(questions = [], draft = {}) {
+  const root = $("manualQuestionCreator");
+  if (!root) return;
+
+  const setId = $("adminSetSelect")?.value || cache.questionCreatorSetId || "";
+  if (!setId) {
+    root.innerHTML = `
+      <div class="question-builder-empty">
+        問題作成を行うには、先に問題集を選択してください。
+      </div>
+    `;
+    return;
+  }
+
+  const nextNumber = Number(draft.number || 0) || Number(cache.questionCreatorNextNumber || 0) || nextManualQuestionNumber(questions);
+  const draftCategory = String(draft.category || cache.questionCreatorLastCategory || "");
+  const firstId = `option_${Date.now()}_1`;
+  const secondId = `option_${Date.now()}_2`;
+
+  root.innerHTML = `
+    <section class="question-builder-grid question-builder-grid-reversed">
+      <section class="question-editor-panel">
+        <div class="section-title-row">
+          <h4>問題入力</h4>
+          <span class="pill">左画面 / 軽量版 v20260705-04</span>
+        </div>
+
+        ${renderQuestionBulkMarkdownBox()}
+
+        <div class="two-col">
+          <div>
+            <label>番号</label>
+            <input id="manualQuestionNumber" type="number" min="1" value="${nextNumber}">
+          </div>
+          <div>
+            <label>分類</label>
+            <input id="manualQuestionCategory" value="${escapeAttr(draftCategory)}" placeholder="例：情報セキュリティ">
+          </div>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>① 問題文セクション</h5>
+          <p class="muted">Markdown形式で入力できます。右側にHTMLへ変換したプレビューを表示します。</p>
+          <div class="editor-toolbar">
+            <button type="button" class="ghost mini" data-action="chooseQuestionCreatorImage('manualQuestionText')">問題文に図を追加</button>
+            <span class="muted">画像をコピーして、この欄に貼り付けることもできます。</span>
+          </div>
+          <textarea id="manualQuestionText" class="image-paste-target" rows="8" placeholder="# 問題文&#10;&#10;以下のうち、正しいものを選んでください。"></textarea>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>② 選択肢セクション</h5>
+          <p class="muted">4択固定ではなく、何択でも作成できます。正解の選択肢にチェックを入れてください。</p>
+          <div id="manualOptionsList" class="question-options-editor">
+            ${questionCreatorOptionRow(firstId, "", true)}
+            ${questionCreatorOptionRow(secondId, "", false)}
+          </div>
+          <button type="button" class="ghost" data-action="addQuestionCreatorOption()">選択肢を追加</button>
+        </div>
+
+        <div class="question-editor-section">
+          <h5>③ 解答解説セクション</h5>
+          <p class="muted">Markdown形式で入力できます。右側にHTMLへ変換したプレビューを表示します。</p>
+          <div class="editor-toolbar">
+            <button type="button" class="ghost mini" data-action="chooseQuestionCreatorImage('manualExplanation')">解答解説に図を追加</button>
+            <span class="muted">画像をコピーして、この欄に貼り付けることもできます。</span>
+          </div>
+          <textarea id="manualExplanation" class="image-paste-target" rows="7" placeholder="## 解説&#10;&#10;この選択肢が正解となる理由を入力してください。"></textarea>
+        </div>
+
+        <div class="button-list">
+          <button data-action="saveQuestionFromCreator()">問題を保存して次へ</button>
+          <button class="ghost" data-action="clearQuestionCreatorForm()">入力内容をクリア</button>
+        </div>
+      </section>
+
+      <section class="question-preview-panel">
+        <div class="question-builder-sticky">
+          <div class="section-title-row">
+            <h4>HTMLプレビュー</h4>
+            <span class="pill">右画面</span>
+          </div>
+
+          <div class="preview-card">
+            <p class="muted">問題文HTMLプレビュー</p>
+            <div id="manualQuestionPreviewText" class="markdown-preview"></div>
+            <details class="html-output-box">
+              <summary>変換後HTMLを表示</summary>
+              <pre id="manualQuestionPreviewHtml"></pre>
+            </details>
+
+            <p class="muted mt-12">選択肢プレビュー</p>
+            <div id="manualQuestionPreviewOptions" class="preview-options"></div>
+
+            <p class="muted mt-12">解答解説HTMLプレビュー</p>
+            <div id="manualExplanationPreview" class="markdown-preview explanation-preview"></div>
+            <details class="html-output-box">
+              <summary>変換後HTMLを表示</summary>
+              <pre id="manualExplanationPreviewHtml"></pre>
+            </details>
+          </div>
+        </div>
+      </section>
+    </section>
+  `;
+
+  bindQuestionCreatorEvents();
+  updateQuestionCreatorPreview();
+}
+
+
+let questionMarkdownAutoFillTimer = null;
+
 function renderQuestionBulkMarkdownBox(note = "Markdown形式の問題を貼り付けると、下の入力欄へ自動反映します。複数問を一括登録する場合は、各問題の末尾に ---END-QUESTION--- を入れてください。") {
   return `
     <div class="question-bulk-md-box">
       <div class="section-title-row">
         <h5>MD一括入力</h5>
-        <span class="pill">自動入力 / 一括登録 / 数式対応 v20260705-10</span>
+        <span class="pill">自動入力 / 一括登録 / 数式対応 v20260705-11</span>
       </div>
       <p class="muted">${escapeHtml(note)}</p>
       <textarea id="manualQuestionBulkMarkdown" rows="10" placeholder="例：

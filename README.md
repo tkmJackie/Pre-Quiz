@@ -1,108 +1,63 @@
-# Markdown + LaTeX 数式対応版 v20260705-10
+# Markdown + LaTeX 数式対応 修正版 v20260705-11
+
+## 今回の修正
+
+v20260705-10 で問題作成・問題一覧系の関数が一部欠けていたため、選択中の問題一覧が出ない問題を修正しました。
+
+```text
+ReferenceError: setQuestionCreatorNumberCacheFromQuestions is not defined
+```
+
+このエラーが出ないように修正済みです。
 
 ## 置き換えるファイル
 
 ```text
 app.js
 styles.css
-```
-
-## 追加するファイル
-
-```text
 vendor/mathjax-config.js
 ```
 
-## 別途配置が必要なファイル
-
-MathJax本体を以下に配置してください。
-
-```text
-vendor/mathjax/tex-svg.js
-```
-
-MathJaxはローカル配置推奨です。CDNを使う場合はCSP変更が必要になります。
-
-## index.html に追加するコード
-
-`app.js` より前に、以下を追加してください。
+## index.html
 
 ```html
-<script src="vendor/mathjax-config.js?v=20260705-10"></script>
-<script defer src="vendor/mathjax/tex-svg.js?v=20260705-10"></script>
+<script src="vendor/mathjax-config.js?v=20260705-11"></script>
+<script defer src="vendor/mathjax/tex-svg.js?v=20260705-11"></script>
+
+<link rel="stylesheet" href="styles.css?v=20260705-11">
+<script src="app.js?v=20260705-11"></script>
 ```
 
-既存の読み込みは以下のようにしてください。
+## CSPについて
 
-```html
-<link rel="stylesheet" href="styles.css?v=20260705-10">
-<script src="app.js?v=20260705-10"></script>
-```
-
-## 使える記法
-
-### インライン数式
-
-```md
-重みは $w$ とし、学習率は $\eta$ とする。
-```
-
-または、
-
-```md
-重みは \(w\) とし、学習率は \(\eta\) とする。
-```
-
-### ブロック数式
-
-```md
-$$
-L(w) = \frac{1}{n}\sum_{i=1}^{n}(y_i - wx_i)^2
-$$
-```
-
-または、
-
-```md
-\[
-P(A|B) = \frac{P(B|A)P(A)}{P(B)}
-\]
-```
-
-## 対応場所
+MathJaxは内部で数式表示用の style を追加するため、厳格なCSPでは以下の警告が出ることがあります。
 
 ```text
-・問題文
-・選択肢
-・解答解説
-・HTMLプレビュー
-・受講者の問題表示画面
-・回答結果画面
+Applying inline style violates the following Content Security Policy directive 'style-src 'self''
 ```
 
-## 対応できる例
+数式表示を優先する場合は、index.html の CSP を以下のようにしてください。
 
-```md
-$$
-A =
-\begin{bmatrix}
-1 & 2 \\
-3 & 4
-\end{bmatrix}
-$$
+```text
+style-src 'self' 'unsafe-inline'
 ```
 
-```md
-$$
-\nabla_w L(w) =
--\frac{2}{n}\sum_{i=1}^{n}x_i(y_i - wx_i)
-$$
+例:
+
+```html
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://cct-english-api.tkm12325.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 ```
 
-## 注意
+## MathJaxの警告について
 
-MathJax本体が未配置の場合でも、LaTeX記法は画面に表示されます。
-ただし、きれいな数式レンダリングには `vendor/mathjax/tex-svg.js` が必要です。
+v20260705-10 では以下の警告が出ることがありました。
+
+```text
+Package 'mathtools' not found.
+Package 'boldsymbol' not found.
+```
+
+v20260705-11 では設定から削除しています。
 
 ## SQL / Worker
 
