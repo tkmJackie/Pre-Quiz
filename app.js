@@ -2385,6 +2385,12 @@ function normalizeMarkdownCompare(value) {
     .toLowerCase();
 }
 
+function stripChoiceLabel(text) {
+  return String(text || "")
+    .replace(/^\s*[A-FＡ-Ｆ]\s*[\).．、:：]\s*/, "")
+    .trim();
+}
+
 function getMarkdownSectionName(line) {
   const text = String(line || "").trim().replace(/^#+\s*/, "").trim();
   const normalized = text.replace(/\s+/g, "");
@@ -2452,17 +2458,17 @@ function parseQuestionOptionLine(line) {
 
   let match = raw.match(/^[-*・]\s*\[(x|X|✓|✔|○|o|O|true|TRUE|1|正解|\s)\]\s*(.+)$/);
   if (match) {
-    return { text: match[2].trim(), isCorrect: !/^\s$/.test(match[1]), label: "" };
+    return { text: stripChoiceLabel(match[2]), isCorrect: !/^\s$/.test(match[1]), label: "" };
   }
 
   match = raw.match(/^[-*・]\s*(?:正解|○|✓|✔)\s*[:：]?\s*(.+)$/);
-  if (match) return { text: match[1].trim(), isCorrect: true, label: "" };
+  if (match) return { text: stripChoiceLabel(match[1]), isCorrect: true, label: "" };
 
   match = raw.match(/^[-*・]\s*(.+)$/);
-  if (match) return { text: match[1].trim(), isCorrect: false, label: "" };
+  if (match) return { text: stripChoiceLabel(match[1]), isCorrect: false, label: "" };
 
   match = raw.match(/^([A-Za-zＡ-Ｚａ-ｚ0-9０-９ア-ン])\s*[\).．、:：]\s*(.+)$/);
-  if (match) return { text: match[2].trim(), isCorrect: false, label: match[1].trim() };
+  if (match) return { text: stripChoiceLabel(match[2]), isCorrect: false, label: match[1].trim() };
 
   return null;
 }
@@ -2562,7 +2568,7 @@ function questionMarkdownToImportRow(markdown, index = 0) {
   const number = numberRaw ? Number(numberRaw.replace(/[^\d]/g, "")) : null;
   const options = (parsed.options || [])
     .map(option => ({
-      text: String(option.text || "").trim(),
+      text: stripChoiceLabel(option.text),
       isCorrect: option.isCorrect === true
     }))
     .filter(option => option.text);
