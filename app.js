@@ -19,6 +19,9 @@ let cache = {
   questionCreatorSetId: "",
   questionCreatorSetTitle: "",
   questionCreatorQuestions: [],
+  questionCreatorNextNumber: 1,
+  questionCreatorQuestionCount: 0,
+  questionCreatorLastCategory: "",
   questionCreatorImageTarget: "",
   questionEditSetId: "",
   questionEditSetTitle: "",
@@ -1602,7 +1605,7 @@ async function selectAdminQuestionSet() {
   }
   const data = await api(`/api/admin/question-sets/${id}/questions`);
   const questions = data.questions || [];
-  cache.questionCreatorQuestions = questions;
+  setQuestionCreatorNumberCacheFromQuestions(questions);
 
   $("questionList").innerHTML = tableHtml(
     ["番号", "分類", "問題文", "形式", "正答数", "選択肢", "操作"],
@@ -1927,9 +1930,6 @@ async function renderQuestionCreatorScreen() {
     return;
   }
 
-  const data = await api(`/api/admin/question-sets/${setId}/questions`);
-  cache.questionCreatorQuestions = data.questions || [];
-
   root.innerHTML = `
     <section class="card question-creator-page">
       <div class="question-creator-header">
@@ -1937,19 +1937,25 @@ async function renderQuestionCreatorScreen() {
           <p class="eyebrow">QUESTION BUILDER</p>
           <h2>問題作成</h2>
           <p class="muted">対象問題集：${escapeHtml(cache.questionCreatorSetTitle || "選択中の問題集")}</p>
+          <p class="muted">問題作成画面では、全問題一覧を読み込まず、次の番号だけ取得します。</p>
         </div>
         <div class="button-list">
           <button class="ghost" data-action="returnQuestionCreatorToAdmin()">問題集管理へ戻る</button>
         </div>
       </div>
 
-      <div id="manualQuestionCreator"></div>
+      <div id="manualQuestionCreator">
+        <div class="question-builder-empty">ナンバリング情報を確認しています...</div>
+      </div>
     </section>
   `;
 
-  renderManualQuestionCreator(cache.questionCreatorQuestions);
+  const summary = await loadQuestionCreatorSummary(setId);
+  renderManualQuestionCreator([], {
+    number: Number(summary.nextNumber || cache.questionCreatorNextNumber || 1) || 1,
+    category: summary.lastCategory || cache.questionCreatorLastCategory || ""
+  });
 }
-
 
 
 function isAllowedMarkdownImageSrc(src) {
@@ -2205,6 +2211,69 @@ function nextManualQuestionNumber(questions = []) {
   return Math.max(...numbers) + 1;
 }
 
+function setQuestionCreatorNumberCacheFromQuestions(questions = []) {
+  const list = Array.isArray(questions) ? questions : [];
+  cache.questionCreatorQuestions = list;
+  cache.questionCreatorQuestionCount = list.length;
+  cache.questionCreatorNextNumber = nextManualQuestionNumber(list);
+
+  const categories = list
+    .map(q => String(q.category || "").trim())
+    .filter(Boolean);
+  if (categories.length) {
+    cache.questionCreatorLastCategory = categories[categories.length - 1];
+  }
+}
+
+function bumpQuestionCreatorNumberCache(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const currentNext = Number(cache.questionCreatorNextNumber || 1) || 1;
+  const maxNumber = Math.max(0, ...list.map(row => Number(row?.number || 0)).filter(n => Number.isFinite(n)));
+
+  if (maxNumber > 0) {
+    cache.questionCreatorNextNumber = Math.max(currentNext, maxNumber + 1);
+  } else {
+    cache.questionCreatorNextNumber = currentNext + list.length;
+  }
+
+  cache.questionCreatorQuestionCount = Number(cache.questionCreatorQuestionCount || 0) + list.length;
+
+  const lastCategory = [...list]
+    .reverse()
+    .map(row => String(row?.category || "").trim())
+    .find(Boolean);
+  if (lastCategory) cache.questionCreatorLastCategory = lastCategory;
+}
+
+async function loadQuestionCreatorSummary(setId) {
+  const fallback = {
+    questionCount: Number(cache.questionCreatorQuestionCount || 0),
+    nextNumber: Number(cache.questionCreatorNextNumber || 1) || nextManualQuestionNumber(cache.questionCreatorQuestions || []),
+    lastCategory: cache.questionCreatorLastCategory || ""
+  };
+
+  if (!setId) return fallback;
+
+  try {
+    const data = await api(`/api/admin/question-sets/${encodeURIComponent(setId)}/summary`);
+    const nextNumber = Number(data.nextNumber || 0);
+    const questionCount = Number(data.questionCount || 0);
+
+    if (Number.isFinite(nextNumber) && nextNumber > 0) cache.questionCreatorNextNumber = nextNumber;
+    if (Number.isFinite(questionCount) && questionCount >= 0) cache.questionCreatorQuestionCount = questionCount;
+    if (data.lastCategory) cache.questionCreatorLastCategory = String(data.lastCategory || "");
+
+    return {
+      questionCount: cache.questionCreatorQuestionCount,
+      nextNumber: cache.questionCreatorNextNumber,
+      lastCategory: cache.questionCreatorLastCategory
+    };
+  } catch (error) {
+    // Workerが未更新の場合でも、既存のキャッシュからナンバリングを維持する
+    return fallback;
+  }
+}
+
 function renderManualQuestionCreator(questions = [], draft = {}) {
   const root = $("manualQuestionCreator");
   if (!root) return;
@@ -2219,8 +2288,8 @@ function renderManualQuestionCreator(questions = [], draft = {}) {
     return;
   }
 
-  const nextNumber = Number(draft.number || 0) || nextManualQuestionNumber(questions);
-  const draftCategory = String(draft.category || "");
+  const nextNumber = Number(draft.number || 0) || Number(cache.questionCreatorNextNumber || 0) || nextManualQuestionNumber(questions);
+  const draftCategory = String(draft.category || cache.questionCreatorLastCategory || "");
   const firstId = `option_${Date.now()}_1`;
   const secondId = `option_${Date.now()}_2`;
 
@@ -2229,7 +2298,7 @@ function renderManualQuestionCreator(questions = [], draft = {}) {
       <section class="question-editor-panel">
         <div class="section-title-row">
           <h4>問題入力</h4>
-          <span class="pill">左画面</span>
+          <span class="pill">左画面 / 軽量版 v20260705-04</span>
         </div>
 
         ${renderQuestionBulkMarkdownBox()}
@@ -2723,14 +2792,13 @@ async function importBulkQuestionMarkdown() {
     }
 
     updateBulkImportProgress(rows.length, rows.length, "一括保存が完了しました");
+    bumpQuestionCreatorNumberCache(rows);
     showMessage(`${rows.length}問を一括保存しました。`, "success");
 
     if (cache.currentScreen === "questionCreator") {
-      const latest = await api(`/api/admin/question-sets/${setId}/questions`);
-      cache.questionCreatorQuestions = latest.questions || [];
-      renderManualQuestionCreator(cache.questionCreatorQuestions, {
-        number: nextManualQuestionNumber(cache.questionCreatorQuestions),
-        category: rows[rows.length - 1]?.category || ""
+      renderManualQuestionCreator([], {
+        number: cache.questionCreatorNextNumber,
+        category: cache.questionCreatorLastCategory || rows[rows.length - 1]?.category || ""
       });
     } else {
       await selectAdminQuestionSet();
@@ -3073,9 +3141,9 @@ function removeQuestionCreatorOption(rowId) {
 
 function clearQuestionCreatorForm() {
   if (!confirm("入力中の問題をクリアしますか？")) return;
-  const currentNumber = Number($("manualQuestionNumber")?.value || 0) || nextManualQuestionNumber(cache.questionCreatorQuestions || []);
-  const currentCategory = $("manualQuestionCategory")?.value.trim() || "";
-  renderManualQuestionCreator(cache.questionCreatorQuestions || [], {
+  const currentNumber = Number($("manualQuestionNumber")?.value || 0) || Number(cache.questionCreatorNextNumber || 1) || 1;
+  const currentCategory = $("manualQuestionCategory")?.value.trim() || cache.questionCreatorLastCategory || "";
+  renderManualQuestionCreator([], {
     number: currentNumber,
     category: currentCategory
   });
@@ -3124,15 +3192,14 @@ async function saveQuestionFromCreator() {
       return;
     }
 
-    const currentNumber = Number($("manualQuestionNumber")?.value || 0) || nextManualQuestionNumber(cache.questionCreatorQuestions || []);
+    const currentNumber = Number($("manualQuestionNumber")?.value || 0) || Number(cache.questionCreatorNextNumber || 1) || 1;
     const currentCategory = $("manualQuestionCategory")?.value.trim() || "";
 
+    bumpQuestionCreatorNumberCache([{ number: currentNumber, category: currentCategory }]);
     showMessage("問題を作成しました。次の問題を入力できます。", "success");
 
     if (cache.currentScreen === "questionCreator") {
-      const latest = await api(`/api/admin/question-sets/${setId}/questions`);
-      cache.questionCreatorQuestions = latest.questions || [];
-      renderManualQuestionCreator(cache.questionCreatorQuestions, {
+      renderManualQuestionCreator([], {
         number: currentNumber + 1,
         category: currentCategory
       });

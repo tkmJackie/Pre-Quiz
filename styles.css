@@ -1589,3 +1589,17 @@ button:disabled {
 .question-bulk-md-box .pill::after {
   content: "";
 }
+
+
+/* =========================
+   Light Question Creator
+========================= */
+
+.question-creator-page .question-builder-empty {
+  padding: 18px;
+  border: 1px dashed #93c5fd;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-weight: 700;
+}
