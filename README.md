@@ -1,61 +1,66 @@
-# Markdown + LaTeX 日本語Windows ¥ 修正版 v20260705-12
+# 受講者画面 MathJax 表示修正版 v20260705-13
 
 ## 修正内容
 
-日本語Windows環境や一部フォントでは、LaTeXの `\` が `¥` のように見える・入力されることがあります。
-
-v20260705-12 では、数式部分だけ以下を自動変換します。
+受講者用画面で、数式が以下のようにそのまま表示される問題を改善しました。
 
 ```text
-¥frac → \frac
-￥frac → \frac
-¥theta → \theta
-￥theta → \theta
-¥( ... ¥) → \( ... \)
-￥( ... ￥) → \( ... \)
+¥(¥arg¥max_{¥theta} P(X ¥mid X)¥)
 ```
 
-これにより、以下のような表示崩れを減らします。
+原因は、画面描画時点で MathJax の読み込みがまだ完了しておらず、
+`typesetPromise()` が実行されない場合があったためです。
 
-```text
-¥(¥arg¥max_{¥theta} P(X ¥mid ¥theta)¥)
-```
+v20260705-13 では、MathJaxの読み込み完了まで数式レンダリングを待機・再実行するようにしました。
 
 ## 置き換えるファイル
 
 ```text
 app.js
 styles.css
+vendor/mathjax-config.js
 ```
 
 ## index.html
 
 ```html
-<script src="vendor/mathjax-config.js?v=20260705-11"></script>
-<script defer src="vendor/mathjax/tex-svg.js?v=20260705-11"></script>
+<script src="vendor/mathjax-config.js?v=20260705-13"></script>
+<script defer src="vendor/mathjax/tex-svg.js?v=20260705-13"></script>
 
-<link rel="stylesheet" href="styles.css?v=20260705-12">
-<script src="app.js?v=20260705-12"></script>
+<link rel="stylesheet" href="styles.css?v=20260705-13">
+<script src="app.js?v=20260705-13"></script>
 ```
 
-`vendor/mathjax-config.js` は v20260705-11 のままで大丈夫です。
+## 重要：CSP
 
-## ChatGPTへの指示
-
-今後、問題作成を依頼するときは以下の一文を入れるのがおすすめです。
+MathJaxは内部で数式表示用のstyleを追加します。
+そのため、index.html の CSP は以下にしてください。
 
 ```text
-LaTeXのコマンドは ¥ ではなく、必ず半角バックスラッシュ \ を使ってください。
-インライン数式は $...$、ブロック数式は $$...$$ で書いてください。
+style-src 'self' 'unsafe-inline'
 ```
 
-## 例
+例:
 
-```md
-- [x] $\arg\max_{\theta} P(X \mid \theta)$
+```html
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://cct-english-api.tkm12325.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 ```
 
-または、Windows上で `¥` になってしまっても、v20260705-12 では数式として表示できるようにしています。
+## 確認方法
+
+コンソールに以下が出れば最新版です。
+
+```text
+Zerquor LMS: student MathJax render fix v20260705-13 loaded
+```
+
+受講者画面では、以下のような文字列がそのまま表示されず、
+
+```text
+¥(¥arg¥max_{¥theta} P(X ¥mid ¥theta)¥)
+```
+
+数式として表示されればOKです。
 
 ## SQL / Worker
 

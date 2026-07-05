@@ -10,7 +10,22 @@ window.MathJax = {
     skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"]
   },
   startup: {
-    typeset: false
+    typeset: false,
+    ready: () => {
+      MathJax.startup.defaultReady();
+
+      if (typeof window.flushPendingMathTypeset === "function") {
+        window.flushPendingMathTypeset();
+      } else {
+        setTimeout(() => {
+          if (window.MathJax && typeof window.MathJax.typesetPromise === "function") {
+            window.MathJax.typesetPromise([document.body]).catch((error) => {
+              console.warn("MathJax initial typeset failed", error);
+            });
+          }
+        }, 0);
+      }
+    }
   },
   svg: {
     fontCache: "global"

@@ -1698,3 +1698,25 @@ button:disabled {
   font-size: 0.86rem;
   color: #64748b;
 }
+
+
+/* =========================
+   Student Math Rendering
+========================= */
+
+.quiz-option-text.markdown-preview {
+  display: block;
+  width: 100%;
+}
+
+.quiz-option-text.markdown-preview > p {
+  margin: 0;
+}
+
+.quiz-markdown mjx-container,
+.quiz-option-text mjx-container,
+.answer-summary-block mjx-container {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
