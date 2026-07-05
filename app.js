@@ -29,7 +29,7 @@ let cache = {
 };
 
 
-const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "applyQuestionMarkdownToForm", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "chooseQuestionCreatorImage", "clearImportedExcel", "clearQuestionBulkMarkdown", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestion", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importBulkQuestionMarkdown", "importExcel", "loadAnswers", "loadBulkQuestionMarkdownFile", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "returnQuestionEditorToAdmin", "saveProfile", "saveQuestionEditor", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showQuestionEditorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
+const DECLARATIVE_ACTIONS = new Set(["addQuestionCreatorOption", "applyQuestionMarkdownToForm", "assignSetToOrg", "assignSetToUser", "backToQuestionSetList", "changePassword", "changeStudentCategory", "chooseQuestionCreatorImage", "clearImportedExcel", "clearQuestionBulkMarkdown", "clearQuestionCreatorForm", "closeTicket", "confirmTwoFactor", "createCompanyStudent", "createContactTicket", "createOrganization", "createQuestionSet", "createQuestionTicket", "createTicket", "createUser", "deleteOrganization", "deleteQuestion", "deleteQuestionSet", "deleteUser", "disableTwoFactor", "editOrganization", "editQuestionSet", "exportExcel", "goMainView", "importBulkQuestionMarkdown", "importExcel", "loadAnswers", "loadBulkQuestionMarkdownFile", "loadContactTickets", "loadProgress", "loadQuiz", "loadTickets", "logout", "refreshAnswersUserOptions", "refreshProgressUserOptions", "reloadAll", "removeQuestionCreatorOption", "replyTicket", "returnQuestionCreatorToAdmin", "returnQuestionEditorToAdmin", "saveProfile", "saveQuestionEditor", "saveQuestionEditorAndNext", "showNextQuestionEditorView", "saveQuestionFromCreator", "searchCompanyUsers", "searchUsers", "selectAdminQuestionSet", "selectQuestionSetFromList", "showContactView", "showPasswordView", "showProfileView", "showQuestionCreatorView", "showQuestionEditorView", "showTwoFactorView", "startQuestionSet", "startTwoFactorSetup", "submitAnswer", "switchRole", "toggleTicket"]);
 
 function parseDeclarativeActionArgs(rawArgs) {
   const raw = String(rawArgs || "").trim();
@@ -1661,6 +1661,37 @@ async function fetchQuestionForEdit(questionId) {
   return data.question;
 }
 
+async function fetchNextQuestionForEdit(questionId) {
+  const data = await api(`/api/admin/questions/${encodeURIComponent(questionId)}/next`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  return data.question || null;
+}
+
+async function showNextQuestionEditorView() {
+  const currentId = cache.questionEditQuestionId || "";
+  if (!currentId) return alert("現在の問題が選択されていません。");
+
+  try {
+    showMessage("次の問題を読み込んでいます...", "success");
+    const nextQuestion = await fetchNextQuestionForEdit(currentId);
+
+    if (!nextQuestion) {
+      showMessage("次の問題はありません。最後の問題です。", "error");
+      return;
+    }
+
+    cache.questionEditQuestionId = nextQuestion.id;
+    cache.questionEditSetId = nextQuestion.question_set_id || cache.questionEditSetId || "";
+    cache.questionEditSetTitle = nextQuestion.question_set_title || cache.questionEditSetTitle || "選択中の問題集";
+    await renderApp();
+    showMessage(`次の問題${nextQuestion.number ? `（${nextQuestion.number}番）` : ""}を表示しました。`, "success");
+  } catch (error) {
+    showMessage(error.message || "次の問題の読み込みに失敗しました。", "error");
+  }
+}
+
 async function renderQuestionEditorScreen() {
   const root = $("adminView");
   const questionId = cache.questionEditQuestionId || "";
@@ -1700,6 +1731,7 @@ async function renderQuestionEditorScreen() {
           <p class="muted">対象問題集：${escapeHtml(cache.questionEditSetTitle || "選択中の問題集")}</p>
         </div>
         <div class="button-list">
+          <button class="ghost" data-action="showNextQuestionEditorView()">次の問題を修正</button>
           <button class="ghost" data-action="returnQuestionEditorToAdmin()">問題集管理へ戻る</button>
           <button class="danger" data-action="deleteQuestion('${actionArg(question.id)}')">この問題を削除</button>
         </div>
@@ -1728,7 +1760,7 @@ function renderManualQuestionEditor(question) {
       <section class="question-editor-panel">
         <div class="section-title-row">
           <h4>問題入力</h4>
-          <span class="pill">編集</span>
+          <span class="pill">編集 / 次へ対応 v20260705-05</span>
         </div>
 
         ${renderQuestionBulkMarkdownBox("既存の内容を、貼り付けたMarkdownで上書きできます。")}
@@ -1779,6 +1811,8 @@ function renderManualQuestionEditor(question) {
 
         <div class="button-list">
           <button data-action="saveQuestionEditor()">変更を保存</button>
+          <button class="ghost" data-action="saveQuestionEditorAndNext()">保存して次の問題へ</button>
+          <button class="ghost" data-action="showNextQuestionEditorView()">次の問題を修正</button>
           <button class="ghost" data-action="returnQuestionEditorToAdmin()">問題集管理へ戻る</button>
         </div>
       </section>
@@ -1850,22 +1884,56 @@ function validateQuestionEditorPayload() {
   };
 }
 
-async function saveQuestionEditor() {
+async function updateCurrentQuestionFromEditor() {
   const questionId = cache.questionEditQuestionId || "";
-  if (!questionId) return alert("編集対象の問題が選択されていません。");
+  if (!questionId) {
+    alert("編集対象の問題が選択されていません。");
+    return false;
+  }
 
+  const payload = validateQuestionEditorPayload();
+
+  await api(`/api/admin/questions/${encodeURIComponent(questionId)}/update`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+  return true;
+}
+
+async function saveQuestionEditor() {
   try {
-    const payload = validateQuestionEditorPayload();
-
-    await api(`/api/admin/questions/${encodeURIComponent(questionId)}/update`, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+    const ok = await updateCurrentQuestionFromEditor();
+    if (!ok) return;
 
     showMessage("問題を更新しました。", "success");
     await returnQuestionEditorToAdmin();
   } catch (error) {
     showMessage(error.message || "問題の更新に失敗しました。", "error");
+  }
+}
+
+async function saveQuestionEditorAndNext() {
+  try {
+    const currentId = cache.questionEditQuestionId || "";
+    const ok = await updateCurrentQuestionFromEditor();
+    if (!ok) return;
+
+    showMessage("問題を更新しました。次の問題を読み込みます。", "success");
+
+    const nextQuestion = await fetchNextQuestionForEdit(currentId);
+    if (!nextQuestion) {
+      showMessage("問題を更新しました。次の問題はありません。", "success");
+      return;
+    }
+
+    cache.questionEditQuestionId = nextQuestion.id;
+    cache.questionEditSetId = nextQuestion.question_set_id || cache.questionEditSetId || "";
+    cache.questionEditSetTitle = nextQuestion.question_set_title || cache.questionEditSetTitle || "選択中の問題集";
+    await renderApp();
+    showMessage(`保存しました。次の問題${nextQuestion.number ? `（${nextQuestion.number}番）` : ""}を表示しました。`, "success");
+  } catch (error) {
+    showMessage(error.message || "問題の更新または次の問題の読み込みに失敗しました。", "error");
   }
 }
 

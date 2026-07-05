@@ -1603,3 +1603,14 @@ button:disabled {
   color: #1e3a8a;
   font-weight: 700;
 }
+
+
+/* =========================
+   Question Editor Next Button
+========================= */
+
+.question-editor-page .button-list button[data-action*="Next"],
+.question-editor-page .button-list button[data-action="showNextQuestionEditorView()"],
+.question-editor-page .button-list button[data-action="saveQuestionEditorAndNext()"] {
+  white-space: nowrap;
+}
