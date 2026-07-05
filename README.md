@@ -1,4 +1,4 @@
-# CSP対応・保存して次へ Not Found 回避版 v20260705-07
+# 問題編集「次へ」高速化版 v20260705-09
 
 ## 置き換えるファイル
 
@@ -10,40 +10,66 @@ worker-single.js
 
 ## 修正内容
 
+問題編集画面の「次の問題を修正」「保存して次の問題へ」を高速化しました。
+
+## 何が速くなるか
+
 ```text
-・進捗バーの inline style を削除
-・Content Security Policy の style-src 'self' でも進捗表示できるように変更
-・native progress 要素で進捗率を表示
-・保存して次へで /next が Not Found の場合、既存APIで次の問題を探す fallback を維持
+変更前:
+  次へボタン
+  ↓
+  全問題一覧を取得
+  ↓
+  次の問題を探す
+  ↓
+  次の問題を再取得
+  ↓
+  表示
+
+変更後:
+  次へボタン
+  ↓
+  Worker側で次の1問だけ取得
+  ↓
+  取得済みの問題をそのまま表示
 ```
+
+全問題一覧を読み込まないため、問題数が多くても次の画面に移動しやすくなります。
+
+## 利用API
+
+```text
+POST /api/admin/questions/{questionId}/next
+```
+
+このAPIが必要なので、worker-single.js も必ずCloudflare Workerへ反映してください。
 
 ## 反映確認
 
-画面に以下が表示されれば最新版です。
+問題編集画面で以下が表示されれば最新版です。
 
 ```text
-自動入力 / 一括登録 v20260705-07
-編集 / 次へ対応 v20260705-07
+編集 / 高速次へ v20260705-09
 ```
 
-ブラウザコンソールには以下が出ます。
+コンソールには以下が出ます。
 
 ```text
-Zerquor LMS: csp-safe progress and next fallback v20260705-07 loaded
+Zerquor LMS: fast next editor v20260705-09 loaded
 ```
 
 ## index.html のキャッシュ対策
 
 ```html
-<link rel="stylesheet" href="styles.css?v=20260705-07">
-<script src="app.js?v=20260705-07"></script>
+<link rel="stylesheet" href="styles.css?v=20260705-09">
+<script src="app.js?v=20260705-09"></script>
 ```
 
-## Cloudflare Worker
+## 重要
 
-worker-single.js も反映してください。
-Worker側に反映すれば `/next` API が使われます。
-反映前でも、フロント側のfallbackで動作します。
+v20260705-08 は `/next` を使わずに既存APIで全問題一覧から次の問題を探すため、問題数が多いと遅くなります。
+
+高速化するには、今回の worker-single.js をCloudflare Workerに反映して、v20260705-09 を使ってください。
 
 ## SQL
 

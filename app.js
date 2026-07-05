@@ -1,4 +1,4 @@
-console.info("Zerquor LMS: csp-safe progress and next fallback v20260705-07 loaded");
+console.info("Zerquor LMS: fast next editor v20260705-09 loaded");
 const API_BASE = "https://cct-english-api.tkm12325.workers.dev";
 const STORAGE_KEY = "cct.quiz.enterprise.session.v2";
 const TRUSTED_DEVICE_KEY = "pre.quiz.trusted_device.v1";
@@ -25,7 +25,8 @@ let cache = {
   questionCreatorImageTarget: "",
   questionEditSetId: "",
   questionEditSetTitle: "",
-  questionEditQuestionId: ""
+  questionEditQuestionId: "",
+  questionEditPrefetchedQuestion: null
 };
 
 
@@ -1648,6 +1649,7 @@ async function returnQuestionEditorToAdmin() {
   const setId = cache.questionEditSetId || cache.questionCreatorSetId || "";
   cache.currentScreen = "main";
   cache.questionEditQuestionId = "";
+  cache.questionEditPrefetchedQuestion = null;
   await renderApp();
 
   if (setId && $("adminSetSelect")) {
@@ -1657,60 +1659,22 @@ async function returnQuestionEditorToAdmin() {
 }
 
 async function fetchQuestionForEdit(questionId) {
+  const cached = cache.questionEditPrefetchedQuestion;
+  if (cached && String(cached.id || "") === String(questionId || "")) {
+    cache.questionEditPrefetchedQuestion = null;
+    return cached;
+  }
+
   const data = await api(`/api/admin/questions/${encodeURIComponent(questionId)}`);
   return data.question;
 }
 
-function sortQuestionsForEditorNavigation(questions = []) {
-  return [...questions].sort((a, b) => {
-    const aSort = Number(a.sort_order || a.number || 0);
-    const bSort = Number(b.sort_order || b.number || 0);
-    if (aSort !== bSort) return aSort - bSort;
-
-    const aNumber = Number(a.number || 0);
-    const bNumber = Number(b.number || 0);
-    if (aNumber !== bNumber) return aNumber - bNumber;
-
-    return String(a.created_at || "").localeCompare(String(b.created_at || "")) || String(a.id || "").localeCompare(String(b.id || ""));
-  });
-}
-
-async function fetchNextQuestionForEditFallback(questionId, originalError) {
-  const setId = cache.questionEditSetId || cache.questionCreatorSetId || $("adminSetSelect")?.value || "";
-  if (!setId) throw originalError;
-
-  const data = await api(`/api/admin/question-sets/${encodeURIComponent(setId)}/questions`);
-  const questions = sortQuestionsForEditorNavigation(data.questions || []);
-
-  if (!questions.length) return null;
-
-  const currentIndex = questions.findIndex(q => String(q.id || "") === String(questionId || ""));
-  if (currentIndex >= 0) {
-    const next = questions[currentIndex + 1];
-    return next?.id ? await fetchQuestionForEdit(next.id) : null;
-  }
-
-  const currentNumber = Number($("manualQuestionNumber")?.value || 0);
-  if (Number.isFinite(currentNumber) && currentNumber > 0) {
-    const next = questions.find(q => Number(q.number || 0) > currentNumber);
-    return next?.id ? await fetchQuestionForEdit(next.id) : null;
-  }
-
-  return null;
-}
-
 async function fetchNextQuestionForEdit(questionId) {
-  try {
-    const data = await api(`/api/admin/questions/${encodeURIComponent(questionId)}/next`, {
-      method: "POST",
-      body: JSON.stringify({})
-    });
-    return data.question || null;
-  } catch (error) {
-    // Worker側に /next API がまだ反映されていない場合は、既存の問題一覧APIで次の問題を探す。
-    // これにより「Not Found」で保存して次へが止まる問題を回避する。
-    return await fetchNextQuestionForEditFallback(questionId, error);
-  }
+  const data = await api(`/api/admin/questions/${encodeURIComponent(questionId)}/next`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  return data.question || null;
 }
 
 async function showNextQuestionEditorView() {
@@ -1729,6 +1693,7 @@ async function showNextQuestionEditorView() {
     cache.questionEditQuestionId = nextQuestion.id;
     cache.questionEditSetId = nextQuestion.question_set_id || cache.questionEditSetId || "";
     cache.questionEditSetTitle = nextQuestion.question_set_title || cache.questionEditSetTitle || "選択中の問題集";
+    cache.questionEditPrefetchedQuestion = nextQuestion;
     await renderApp();
     showMessage(`次の問題${nextQuestion.number ? `（${nextQuestion.number}番）` : ""}を表示しました。`, "success");
   } catch (error) {
@@ -1804,7 +1769,7 @@ function renderManualQuestionEditor(question) {
       <section class="question-editor-panel">
         <div class="section-title-row">
           <h4>問題入力</h4>
-          <span class="pill">編集 / 次へ対応 v20260705-07</span>
+          <span class="pill">編集 / 高速次へ v20260705-09</span>
         </div>
 
         ${renderQuestionBulkMarkdownBox("既存の内容を、貼り付けたMarkdownで上書きできます。")}
@@ -1974,6 +1939,7 @@ async function saveQuestionEditorAndNext() {
     cache.questionEditQuestionId = nextQuestion.id;
     cache.questionEditSetId = nextQuestion.question_set_id || cache.questionEditSetId || "";
     cache.questionEditSetTitle = nextQuestion.question_set_title || cache.questionEditSetTitle || "選択中の問題集";
+    cache.questionEditPrefetchedQuestion = nextQuestion;
     await renderApp();
     showMessage(`保存しました。次の問題${nextQuestion.number ? `（${nextQuestion.number}番）` : ""}を表示しました。`, "success");
   } catch (error) {
@@ -2504,7 +2470,7 @@ function renderQuestionBulkMarkdownBox(note = "Markdown形式の問題を貼り�
     <div class="question-bulk-md-box">
       <div class="section-title-row">
         <h5>MD一括入力</h5>
-        <span class="pill">自動入力 / 一括登録 v20260705-07</span>
+        <span class="pill">自動入力 / 一括登録 v20260705-09</span>
       </div>
       <p class="muted">${escapeHtml(note)}</p>
       <textarea id="manualQuestionBulkMarkdown" rows="10" placeholder="例：
