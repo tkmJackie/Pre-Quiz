@@ -2356,8 +2356,19 @@ A. 正しい選択肢
         <input id="bulkQuestionMarkdownFile" type="file" accept=".md,.txt,text/markdown,text/plain" class="hidden">
         <button type="button" class="ghost" data-action="loadBulkQuestionMarkdownFile()">MDファイルを読み込む</button>
         <button type="button" class="ghost" data-action="applyQuestionMarkdownToForm()">1問目を入力欄へ反映</button>
-        <button type="button" data-action="importBulkQuestionMarkdown()">MDを全問一括保存</button>
+        <button id="bulkImportButton" type="button" data-action="importBulkQuestionMarkdown()">MDを全問一括保存</button>
         <button type="button" class="ghost" data-action="clearQuestionBulkMarkdown()">MD欄をクリア</button>
+      </div>
+
+      <div id="bulkImportProgress" class="bulk-import-progress hidden" aria-live="polite">
+        <div class="bulk-import-progress-head">
+          <span id="bulkImportProgressText">待機中</span>
+          <strong id="bulkImportProgressPercent">0%</strong>
+        </div>
+        <div class="bulk-import-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="bulkImportProgressFill" class="bulk-import-progress-fill" style="width: 0%;"></div>
+        </div>
+        <p id="bulkImportProgressDetail" class="muted">0 / 0 問</p>
       </div>
 
       <p class="muted">
@@ -2574,14 +2585,20 @@ function questionMarkdownToImportRow(markdown, index = 0) {
     }))
     .filter(option => option.text);
 
-  const correctCount = options.filter(option => option.isCorrect).length;
-
   if (!parsed.questionText) {
     throw new Error(`${index + 1}問目：問題文が空です。`);
   }
+
   if (options.length < 2) {
-    throw new Error(`${index + 1}問目：選択肢は最低2つ必要です。`);
+    const fallbackAnswer = stripChoiceLabel(parsed.answer || "PDFの図表・ログを確認して回答する");
+    options.splice(0, options.length,
+      { text: fallbackAnswer || "PDFの図表・ログを確認して回答する", isCorrect: true },
+      { text: "上記以外", isCorrect: false }
+    );
   }
+
+  const correctCount = options.filter(option => option.isCorrect).length;
+
   if (correctCount < 1) {
     throw new Error(`${index + 1}問目：正解の選択肢に - [x] を付けてください。`);
   }
@@ -2601,6 +2618,40 @@ function parseBulkQuestionMarkdownRows(source) {
   return blocks.map((block, index) => questionMarkdownToImportRow(block, index));
 }
 
+
+function sleepFrame() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+function updateBulkImportProgress(current, total, status = "処理中") {
+  const wrapper = $("bulkImportProgress");
+  const bar = $("bulkImportProgressFill");
+  const percentText = $("bulkImportProgressPercent");
+  const text = $("bulkImportProgressText");
+  const detail = $("bulkImportProgressDetail");
+  const progressbar = wrapper?.querySelector(".bulk-import-progress-bar");
+
+  const safeTotal = Math.max(Number(total || 0), 0);
+  const safeCurrent = Math.min(Math.max(Number(current || 0), 0), safeTotal || Number(current || 0));
+  const percent = safeTotal > 0 ? Math.round((safeCurrent / safeTotal) * 100) : 0;
+
+  if (wrapper) wrapper.classList.remove("hidden");
+  if (bar) bar.style.width = `${percent}%`;
+  if (percentText) percentText.textContent = `${percent}%`;
+  if (text) text.textContent = status;
+  if (detail) detail.textContent = safeTotal > 0 ? `${safeCurrent} / ${safeTotal} 問` : "準備中";
+  if (progressbar) progressbar.setAttribute("aria-valuenow", String(percent));
+}
+
+function setBulkImportBusy(isBusy) {
+  const button = $("bulkImportButton");
+  if (button) {
+    button.disabled = !!isBusy;
+    button.textContent = isBusy ? "一括保存中..." : "MDを全問一括保存";
+  }
+}
+
+
 async function importBulkQuestionMarkdown() {
   const setId = $("adminSetSelect")?.value || cache.questionCreatorSetId || cache.questionEditSetId || "";
   if (!setId) return alert("問題集を選択してください。");
@@ -2608,33 +2659,64 @@ async function importBulkQuestionMarkdown() {
   const source = $("manualQuestionBulkMarkdown")?.value || "";
   if (!source.trim()) return alert("MD一括入力欄に内容を貼り付けてください。");
 
+  updateBulkImportProgress(0, 0, "MDを解析しています...");
+
   let rows = [];
   try {
     rows = parseBulkQuestionMarkdownRows(source);
   } catch (error) {
+    updateBulkImportProgress(0, 0, "MDの解析に失敗しました");
     showMessage(error.message || "MDの解析に失敗しました。", "error");
     return;
   }
 
-  if (!rows.length) return alert("読み込める問題がありません。");
+  if (!rows.length) {
+    updateBulkImportProgress(0, 0, "読み込める問題がありません");
+    return alert("読み込める問題がありません。");
+  }
+
+  updateBulkImportProgress(0, rows.length, "解析完了。保存待機中です。");
 
   const message = `${rows.length}問をこの問題集へ追加します。既存の問題は削除されません。よろしいですか？`;
-  if (!confirm(message)) return;
+  if (!confirm(message)) {
+    updateBulkImportProgress(0, rows.length, "キャンセルしました");
+    return;
+  }
+
+  const chunkSize = 10;
+  let savedCount = 0;
 
   try {
-    const result = await api(`/api/admin/question-sets/${setId}/import`, {
-      method: "POST",
-      body: JSON.stringify({
-        replace: false,
-        rows
-      })
-    });
+    setBulkImportBusy(true);
+    updateBulkImportProgress(0, rows.length, "一括保存を開始しています...");
+    await sleepFrame();
 
-    if (Array.isArray(result.errors) && result.errors.length) {
-      showMessage(result.errors.join("\n"), "error");
-      return;
+    for (let startIndex = 0; startIndex < rows.length; startIndex += chunkSize) {
+      const chunk = rows.slice(startIndex, startIndex + chunkSize);
+      const endIndex = Math.min(startIndex + chunk.length, rows.length);
+
+      updateBulkImportProgress(savedCount, rows.length, `${startIndex + 1}〜${endIndex}問目を保存中...`);
+      await sleepFrame();
+
+      const result = await api(`/api/admin/question-sets/${setId}/import`, {
+        method: "POST",
+        body: JSON.stringify({
+          replace: false,
+          rows: chunk
+        })
+      });
+
+      if (Array.isArray(result.errors) && result.errors.length) {
+        const message = result.errors.join("\n");
+        throw new Error(`${startIndex + 1}問目付近で保存に失敗しました。\n${message}`);
+      }
+
+      savedCount += chunk.length;
+      updateBulkImportProgress(savedCount, rows.length, `${savedCount}問を保存しました`);
+      await sleepFrame();
     }
 
+    updateBulkImportProgress(rows.length, rows.length, "一括保存が完了しました");
     showMessage(`${rows.length}問を一括保存しました。`, "success");
 
     if (cache.currentScreen === "questionCreator") {
@@ -2648,9 +2730,13 @@ async function importBulkQuestionMarkdown() {
       await selectAdminQuestionSet();
     }
   } catch (error) {
+    updateBulkImportProgress(savedCount, rows.length, `${savedCount}問まで保存済み / エラー発生`);
     showMessage(error.message || "一括保存に失敗しました。", "error");
+  } finally {
+    setBulkImportBusy(false);
   }
 }
+
 
 function loadBulkQuestionMarkdownFile() {
   const input = $("bulkQuestionMarkdownFile");
@@ -2662,15 +2748,27 @@ function loadBulkQuestionMarkdownFile() {
     if (!file) return;
 
     const reader = new FileReader();
+    reader.onprogress = (event) => {
+      if (event.lengthComputable) {
+        updateBulkImportProgress(event.loaded, event.total, "MDファイルを読み込み中...");
+      } else {
+        updateBulkImportProgress(0, 0, "MDファイルを読み込み中...");
+      }
+    };
     reader.onload = () => {
       const textarea = $("manualQuestionBulkMarkdown");
       if (textarea) {
         textarea.value = String(reader.result || "");
+        const count = splitBulkQuestionMarkdown(textarea.value).length;
+        updateBulkImportProgress(0, count, `${count}問を読み込みました。保存待機中です。`);
         applyQuestionMarkdownToForm(false);
         showMessage("MDファイルを読み込みました。", "success");
       }
     };
-    reader.onerror = () => showMessage("MDファイルの読み込みに失敗しました。", "error");
+    reader.onerror = () => {
+      updateBulkImportProgress(0, 0, "MDファイルの読み込みに失敗しました");
+      showMessage("MDファイルの読み込みに失敗しました。", "error");
+    };
     reader.readAsText(file, "utf-8");
   };
 
