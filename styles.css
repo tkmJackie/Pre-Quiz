@@ -1529,3 +1529,63 @@ button:disabled {
 .bulk-import-progress p {
   margin: 8px 0 0;
 }
+
+
+/* =========================
+   Bulk Import Progress Visibility Fix
+========================= */
+
+.bulk-import-progress {
+  display: block;
+  position: relative;
+  margin: 16px 0 12px;
+  padding: 16px;
+  border: 2px solid #2563eb;
+  border-radius: 16px;
+  background: #eff6ff;
+}
+
+.bulk-import-progress::before {
+  content: "進捗";
+  position: absolute;
+  top: -12px;
+  left: 14px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.bulk-import-progress-bar {
+  height: 16px;
+  border: 1px solid #93c5fd;
+}
+
+.bulk-import-progress-fill {
+  min-width: 0;
+}
+
+.bulk-import-progress-head {
+  margin-top: 2px;
+}
+
+
+/* =========================
+   Bulk Import Progress V3 Forced Visibility
+========================= */
+
+#bulkImportProgress {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#bulkImportProgressFill {
+  display: block !important;
+}
+
+.question-bulk-md-box .pill::after {
+  content: "";
+}

@@ -1,3 +1,4 @@
+console.info("Zerquor LMS: bulk import progress v20260705-03 loaded");
 const API_BASE = "https://cct-english-api.tkm12325.workers.dev";
 const STORAGE_KEY = "cct.quiz.enterprise.session.v2";
 const TRUSTED_DEVICE_KEY = "pre.quiz.trusted_device.v1";
@@ -2322,7 +2323,7 @@ function renderQuestionBulkMarkdownBox(note = "Markdown形式の問題を貼り�
     <div class="question-bulk-md-box">
       <div class="section-title-row">
         <h5>MD一括入力</h5>
-        <span class="pill">自動入力 / 一括登録</span>
+        <span class="pill">自動入力 / 一括登録 v20260705-03</span>
       </div>
       <p class="muted">${escapeHtml(note)}</p>
       <textarea id="manualQuestionBulkMarkdown" rows="10" placeholder="例：
@@ -2360,15 +2361,15 @@ A. 正しい選択肢
         <button type="button" class="ghost" data-action="clearQuestionBulkMarkdown()">MD欄をクリア</button>
       </div>
 
-      <div id="bulkImportProgress" class="bulk-import-progress hidden" aria-live="polite">
+      <div id="bulkImportProgress" class="bulk-import-progress" aria-live="polite">
         <div class="bulk-import-progress-head">
-          <span id="bulkImportProgressText">待機中</span>
+          <span id="bulkImportProgressText">MD一括保存の進捗</span>
           <strong id="bulkImportProgressPercent">0%</strong>
         </div>
         <div class="bulk-import-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div id="bulkImportProgressFill" class="bulk-import-progress-fill" style="width: 0%;"></div>
         </div>
-        <p id="bulkImportProgressDetail" class="muted">0 / 0 問</p>
+        <p id="bulkImportProgressDetail" class="muted">MDファイルを読み込む、または「MDを全問一括保存」を押すと進捗が更新されます。</p>
       </div>
 
       <p class="muted">
@@ -2620,7 +2621,9 @@ function parseBulkQuestionMarkdownRows(source) {
 
 
 function sleepFrame() {
-  return new Promise(resolve => setTimeout(resolve, 0));
+  return new Promise(resolve => {
+    requestAnimationFrame(() => setTimeout(resolve, 0));
+  });
 }
 
 function updateBulkImportProgress(current, total, status = "処理中") {
@@ -2635,7 +2638,10 @@ function updateBulkImportProgress(current, total, status = "処理中") {
   const safeCurrent = Math.min(Math.max(Number(current || 0), 0), safeTotal || Number(current || 0));
   const percent = safeTotal > 0 ? Math.round((safeCurrent / safeTotal) * 100) : 0;
 
-  if (wrapper) wrapper.classList.remove("hidden");
+  if (wrapper) {
+    wrapper.classList.remove("hidden");
+    wrapper.style.display = "block";
+  }
   if (bar) bar.style.width = `${percent}%`;
   if (percentText) percentText.textContent = `${percent}%`;
   if (text) text.textContent = status;
@@ -2683,7 +2689,7 @@ async function importBulkQuestionMarkdown() {
     return;
   }
 
-  const chunkSize = 10;
+  const chunkSize = 5;
   let savedCount = 0;
 
   try {
@@ -2739,6 +2745,7 @@ async function importBulkQuestionMarkdown() {
 
 
 function loadBulkQuestionMarkdownFile() {
+  updateBulkImportProgress(0, 0, "MDファイルを選択してください");
   const input = $("bulkQuestionMarkdownFile");
   if (!input) return;
 
@@ -2800,6 +2807,9 @@ function applyQuestionMarkdownToForm(showNotice = true) {
 function clearQuestionBulkMarkdown() {
   const input = $("manualQuestionBulkMarkdown");
   if (input) input.value = "";
+  updateBulkImportProgress(0, 0, "MD一括保存の進捗");
+  const detail = $("bulkImportProgressDetail");
+  if (detail) detail.textContent = "MDファイルを読み込む、または「MDを全問一括保存」を押すと進捗が更新されます。";
 }
 
 function bindQuestionCreatorEvents() {
