@@ -1688,3 +1688,13 @@ button:disabled {
 .markdown-table-wrap td.md-align-right {
   text-align: right;
 }
+
+
+/* =========================
+   Math Input Hint
+========================= */
+
+.math-input-note {
+  font-size: 0.86rem;
+  color: #64748b;
+}
