@@ -2521,6 +2521,7 @@ function parseQuestionMarkdownForAutoFill(markdown) {
     number: String(sections.number || "").trim(),
     category: String(sections.category || "").trim(),
     questionText,
+    answer: sections.answer.join("\n").trim(),
     explanation,
     options
   };
