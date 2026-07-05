@@ -1459,3 +1459,24 @@ button:disabled {
   background: #ffffff;
   line-height: 1.7;
 }
+
+
+/* =========================
+   Bulk Markdown Import
+========================= */
+
+.bulk-md-import-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.question-bulk-md-box code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #e0e7ff;
+  color: #1e3a8a;
+  font-weight: 800;
+}
