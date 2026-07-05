@@ -1,24 +1,30 @@
-# 受講者画面 MathJax 表示修正版 v20260705-13
+# 問題エクスポート修正版 v20260705-15
+
+## 原因
+
+現在の app.js は、エクスポート時に以下のAPIだけを呼びます。
+
+```js
+/api/admin/question-sets/{setId}/export
+```
+
+Worker側に `export` アクションが入っていない、または古いWorkerがデプロイされている場合、
+このAPIが 404 になり、Excelが出力されません。
 
 ## 修正内容
 
-受講者用画面で、数式が以下のようにそのまま表示される問題を改善しました。
+v20260705-15 では以下の2段構えにしました。
 
-```text
-¥(¥arg¥max_{¥theta} P(X ¥mid X)¥)
-```
+1. `/api/admin/question-sets/{setId}/export` を試す
+2. 失敗した場合は `/api/admin/question-sets/{setId}/questions` から問題一覧を取得して、ブラウザ側でExcelを作る
 
-原因は、画面描画時点で MathJax の読み込みがまだ完了しておらず、
-`typesetPromise()` が実行されない場合があったためです。
-
-v20260705-13 では、MathJaxの読み込み完了まで数式レンダリングを待機・再実行するようにしました。
+そのため、Workerの反映が遅れてもエクスポートしやすくなります。
 
 ## 置き換えるファイル
 
 ```text
 app.js
-styles.css
-vendor/mathjax-config.js
+worker-single.js
 ```
 
 ## index.html
@@ -28,40 +34,46 @@ vendor/mathjax-config.js
 <script defer src="vendor/mathjax/tex-svg.js?v=20260705-13"></script>
 
 <link rel="stylesheet" href="styles.css?v=20260705-13">
-<script src="app.js?v=20260705-13"></script>
+<script defer src="app.js?v=20260705-15"></script>
 ```
 
-## 重要：CSP
+## 重要
 
-MathJaxは内部で数式表示用のstyleを追加します。
-そのため、index.html の CSP は以下にしてください。
+`worker-single.js` もCloudflare Workerへ反映してください。
+ただし、v20260705-15 の app.js はフォールバックを持っているため、
+Workerの `/export` が一時的に失敗しても `/questions` からExcelを作成します。
+
+## 確認
+
+コンソールに以下が出れば app.js は反映済みです。
 
 ```text
-style-src 'self' 'unsafe-inline'
+Zerquor LMS: export fix v20260705-15 loaded
 ```
 
-例:
+## SQL
+
+不要です。
+
+
+## index.html も同梱
+
+このZIPには `index.html` も含めています。
+
+`index.html` は以下の状態です。
 
 ```html
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://cct-english-api.tkm12325.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<link rel="stylesheet" href="styles.css?v=20260705-13">
+<script src="vendor/mathjax-config.js?v=20260705-13"></script>
+<script defer src="vendor/mathjax/tex-svg.js?v=20260705-13"></script>
+<script defer src="app.js?v=20260705-15"></script>
 ```
 
-## 確認方法
-
-コンソールに以下が出れば最新版です。
+CSPも MathJax 用に以下を含めています。
 
 ```text
-Zerquor LMS: student MathJax render fix v20260705-13 loaded
+worker-src 'self' blob:;
+style-src 'self' 'unsafe-inline';
+font-src 'self' data:;
+connect-src 'self' https://cct-english-api.tkm12325.workers.dev;
 ```
-
-受講者画面では、以下のような文字列がそのまま表示されず、
-
-```text
-¥(¥arg¥max_{¥theta} P(X ¥mid ¥theta)¥)
-```
-
-数式として表示されればOKです。
-
-## SQL / Worker
-
-変更不要です。
