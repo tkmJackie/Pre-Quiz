@@ -1,4 +1,4 @@
-console.info("Zerquor LMS: question set import/export layout cleanup v20260708-01 loaded");
+console.info("Zerquor LMS: question set import/export layout cleanup fix v20260708-02 loaded");
 const API_BASE = "https://cct-english-api.tkm12325.workers.dev";
 const STORAGE_KEY = "cct.quiz.enterprise.session.v2";
 const TRUSTED_DEVICE_KEY = "pre.quiz.trusted_device.v1";
@@ -1185,7 +1185,7 @@ function ensureQuestionSetAdminStyles() {
   document.head.appendChild(style);
 }
 
-function renderAdmin() {
+async function renderAdmin() {
   ensureQuestionSetAdminStyles();
   const root = $("adminView");
   root.innerHTML = `

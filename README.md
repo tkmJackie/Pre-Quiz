@@ -1,31 +1,39 @@
-# 問題集管理画面 レイアウト整理版 v20260708-01
+# 問題集管理画面 レイアウト整理版 修正版 v20260708-02
 
-## 変更内容
+## 修正内容
 
-- 問題集管理画面のインポート / エクスポート / 管理操作の配置を整理
-- 操作を以下の3ブロックに再編成
-  - インポート
-  - エクスポート
-  - 管理操作
-- 問題作成画面を開くボタンを管理操作ブロック内に整理
-- 画面幅が狭い場合も見やすいようにレスポンシブ調整を追加
-
-## 含まれるファイル
-
-- index.html
-- app.js
-- README.md
-
-## 反映方法
-
-1. `index.html` を置き換え
-2. `app.js` を置き換え
-3. ブラウザをハードリロード
-
-## 確認方法
-
-ブラウザのコンソールに以下が出れば反映されています。
+v20260708-01 で以下の構文エラーが出る問題を修正しました。
 
 ```text
-Zerquor LMS: question set import/export layout cleanup v20260708-01 loaded
+Uncaught SyntaxError: await is only valid in async functions and the top level bodies of modules
+```
+
+原因は、`renderAdmin()` の中で `await fillAdminData()` を使っているのに、
+関数定義が `async function renderAdmin()` ではなく `function renderAdmin()` になっていたためです。
+
+## 置き換えるファイル
+
+```text
+index.html
+app.js
+README.md
+```
+
+`worker-single.js` は変更不要です。
+
+## 確認
+
+コンソールに以下が出れば反映済みです。
+
+```text
+Zerquor LMS: question set import/export layout cleanup fix v20260708-02 loaded
+```
+
+## index.html
+
+```html
+<link rel="stylesheet" href="styles.css?v=20260708-02">
+<script src="vendor/mathjax-config.js?v=20260705-13"></script>
+<script defer src="vendor/mathjax/tex-svg.js?v=20260705-13"></script>
+<script defer src="app.js?v=20260708-02"></script>
 ```
