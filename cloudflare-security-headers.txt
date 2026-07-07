@@ -1,0 +1,22 @@
+# Cloudflare HTTP Response Headers / Transform Rule 設定例
+
+GitHub Pages配信の場合、`_headers` ファイルは自動適用されません。
+Cloudflare Pagesなら `_headers` が使えます。
+
+GitHub Pages + Cloudflare の場合は、Cloudflare の Rules / Transform Rules で
+以下のレスポンスヘッダーを設定してください。
+
+Content-Security-Policy:
+default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https://cct-english-api.tkm12325.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+
+X-Frame-Options:
+DENY
+
+X-Content-Type-Options:
+nosniff
+
+Referrer-Policy:
+no-referrer
+
+Permissions-Policy:
+camera=(), microphone=(), geolocation=(), payment=(), usb=()

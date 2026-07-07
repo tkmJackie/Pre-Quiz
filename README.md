@@ -1,99 +1,154 @@
-# 修正優先度 高 対応版 v20260705-17
+# セキュリティ追加対策 1〜6 対応版 v20260705-18
 
-## 対応した内容
+## 対応内容
 
-今回のZIPでは、セキュリティ修正の優先度が高い以下を反映しています。
+依頼された以下の1〜6をまとめて反映しています。
 
 ```text
-1. WorkerでURL tokenを明示的に拒否
-2. 認証ロールをURLパラメータから受け取らない
-3. CORSのデフォルト許可元を https://lms.zerquor.com に固定
-4. Markdown画像で外部HTTPS画像を表示しない
+1. Worker側の入力サイズ制限
+2. 重要操作時の再認証
+3. frame-ancestors / X-Frame-Options のヘッダー設定例
+4. JSON / Markdown エクスポート追加
+5. 管理者向け監査ログ画面
+6. 論理削除・復元機能
 ```
 
 ---
 
-## 置き換えるファイル
+## 含まれるファイル
 
 ```text
 index.html
 app.js
 worker-single.js
+_headers
+cloudflare-security-headers.txt
 README.md
 ```
 
 ---
 
-## 1. URL token の拒否
+## 反映先
 
-Workerの `requireAuth()` で、URLに `?token=` が付いていた場合は拒否します。
-
-```js
-const url = new URL(request.url);
-if (url.searchParams.has("token")) {
-  throw httpError(400, "URL token is not allowed");
-}
-```
-
-認証トークンは、必ず以下のヘッダーだけで受け取ります。
+GitHub側:
 
 ```text
-Authorization: Bearer <JWT>
+index.html
+app.js
+_headers
+cloudflare-security-headers.txt
+```
+
+Cloudflare Worker側:
+
+```text
+worker-single.js
+```
+
+SQL変更:
+
+```text
+不要
+```
+
+既存の `is_active` を使って論理削除します。
+
+---
+
+## 1. Worker側の入力サイズ制限
+
+Workerで以下の制限を入れています。
+
+```text
+JSONリクエスト全体: 最大 5MB
+問題文: 最大 100KB
+解説: 最大 200KB
+選択肢1つ: 最大 50KB
+1問全体: 最大 300KB
+一括インポート: 最大 500問
+```
+
+制限超過時は `413` で拒否します。
+
+---
+
+## 2. 重要操作時の再認証
+
+以下の操作でTOTP再認証を求めます。
+
+```text
+ユーザー削除
+ユーザー更新のうち、パスワード変更・ロール変更・2FAリセット・無効化
+企業無効化
+問題集削除
+問題集復元
+問題一括論理削除
+問題削除
+問題復元
+```
+
+フロント側では認証アプリの6桁コードを入力します。
+
+Worker側では `reauth.totpCode` を検証します。
+`reauth.password` による検証もWorker側では対応しています。
+
+---
+
+## 3. frame-ancestors / X-Frame-Options
+
+API側のWorkerはすでに `X-Frame-Options: DENY` と `frame-ancestors 'none'` を返します。
+
+静的フロント側については、CloudflareでHTTPレスポンスヘッダーを設定してください。
+同梱の `_headers` はCloudflare Pages用です。
+GitHub Pages + Cloudflareの場合は `cloudflare-security-headers.txt` の内容をCloudflare Rulesに設定してください。
+
+---
+
+## 4. JSON / Markdown エクスポート
+
+問題集管理に以下を追加しています。
+
+```text
+JSONエクスポート
+Markdownエクスポート
+```
+
+Excelと違い、画像の `data:image` も保持します。
+完全バックアップ用途にはJSONまたはMarkdownを使ってください。
+
+---
+
+## 5. 管理者向け監査ログ画面
+
+管理者画面に「監査ログ」カードを追加しています。
+
+取得できる主なログ:
+
+```text
+再認証成功・失敗
+ユーザー作成・削除・更新
+問題集作成・更新・削除・復元
+問題作成・更新・削除・復元
+エクスポート
+インポート
 ```
 
 ---
 
-## 2. 認証ロールはURLから受け取らない
+## 6. 論理削除・復元機能
 
-選択中ロールは、従来通りヘッダーから受け取ります。
+物理削除ではなく、既存の `is_active = 0` を使った論理削除に変更しています。
 
-```text
-X-CCT-Role: admin
-X-CCT-Role: company_manager
-X-CCT-Role: student
-```
-
-`?role=admin` のようなURL指定は認証ロールには使いません。
-
----
-
-## 3. CORSの許可元を固定
-
-WorkerのデフォルトCORS許可元を以下にしました。
+対象:
 
 ```text
-https://lms.zerquor.com
+問題集削除
+問題削除
+インポート済み問題の削除
 ```
 
-Cloudflare Workerの環境変数も、本番では以下にしてください。
-
-```text
-CORS_ORIGIN=https://lms.zerquor.com
-```
-
-`*` は使わないでください。今回のコードでは `*` は無視します。
-
----
-
-## 4. Markdown画像の外部HTTPSを禁止
-
-以下は許可します。
-
-```text
-data:image/png
-data:image/jpeg
-data:image/webp
-data:image/gif
-images/ 配下のローカル画像
-```
-
-以下は許可しません。
-
-```text
-https://example.com/image.png
-```
-
-受講者が問題を開いたときに外部サーバへアクセスログが残る可能性があるためです。
+管理者画面に「削除済みデータ」カードを追加しています。
+そこから問題集・問題を復元できます。
 
 ---
 
@@ -103,23 +158,27 @@ https://example.com/image.png
 <link rel="stylesheet" href="styles.css?v=20260705-13">
 <script src="vendor/mathjax-config.js?v=20260705-13"></script>
 <script defer src="vendor/mathjax/tex-svg.js?v=20260705-13"></script>
-<script defer src="app.js?v=20260705-17"></script>
+<script defer src="app.js?v=20260705-18"></script>
 ```
 
 ---
 
 ## 確認
 
-ブラウザのコンソールに以下が出れば `app.js` は反映済みです。
+ブラウザのコンソールに以下が出れば反映済みです。
 
 ```text
-Zerquor LMS: security high priority fix v20260705-17 loaded
+Zerquor LMS: security full fix v20260705-18 loaded
 ```
 
-WorkerもCloudflare側に `worker-single.js` を反映してください。
+Worker側は以下で確認できます。
 
----
+```text
+/api/version
+```
 
-## SQL
+期待値:
 
-変更不要です。
+```text
+enterprise-v2-security-full-20260705-18
+```
