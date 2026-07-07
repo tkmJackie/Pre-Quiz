@@ -1,4 +1,4 @@
-console.info("Zerquor LMS: security full fix v20260705-18 loaded");
+console.info("Zerquor LMS: question set import/export layout cleanup v20260708-01 loaded");
 const API_BASE = "https://cct-english-api.tkm12325.workers.dev";
 const STORAGE_KEY = "cct.quiz.enterprise.session.v2";
 const TRUSTED_DEVICE_KEY = "pre.quiz.trusted_device.v1";
@@ -1109,7 +1109,84 @@ async function loadQuestionSetCategories(questionSetId) {
   return cache.categoriesBySet[questionSetId];
 }
 
-async function renderAdmin() {
+async 
+function ensureQuestionSetAdminStyles() {
+  if (document.getElementById("questionSetAdminStyles")) return;
+  const style = document.createElement("style");
+  style.id = "questionSetAdminStyles";
+  style.textContent = `
+    .questionset-action-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .questionset-block {
+      border: 1px solid var(--line, #d9e1f2);
+      border-radius: 16px;
+      background: var(--surface-alt, #f8faff);
+      padding: 18px;
+    }
+    .questionset-block-wide {
+      grid-column: 1 / -1;
+    }
+    .questionset-block h3 {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+    }
+    .questionset-block-header {
+      margin-bottom: 14px;
+    }
+    .questionset-block-header .muted {
+      margin: 0;
+    }
+    .questionset-primary-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .questionset-file-field {
+      min-width: 0;
+    }
+    .questionset-file-field input[type="file"] {
+      width: 100%;
+      max-width: 100%;
+    }
+    .questionset-export-grid,
+    .questionset-maintenance-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .questionset-open-builder {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line, #d9e1f2);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .questionset-open-builder .muted {
+      margin: 0;
+    }
+    @media (max-width: 900px) {
+      .questionset-action-grid {
+        grid-template-columns: 1fr;
+      }
+      .questionset-primary-row {
+        grid-template-columns: 1fr;
+      }
+      .questionset-primary-row > button {
+        width: 100%;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function renderAdmin() {
+  ensureQuestionSetAdminStyles();
   const root = $("adminView");
   root.innerHTML = `
     <div class="two-col">
@@ -1221,6 +1298,7 @@ function adminUserCard() {
   `;
 }
 
+
 function adminQuestionSetCard() {
   return `
     <section class="card">
@@ -1244,36 +1322,62 @@ function adminQuestionSetCard() {
       <label>問題集選択</label>
       <select id="adminSetSelect" data-change="selectAdminQuestionSet()"></select>
 
-      <div class="file-row">
-        <div>
-          <label>Excelインポート</label>
-          <input id="excelFile" type="file" accept=".xlsx,.xls">
-        </div>
-        <button id="importButton" data-action="importExcel()">インポート</button>
-        <button class="ghost" data-action="exportExcel()">Excelエクスポート</button>
-        <button class="ghost" data-action="exportJson()">JSONエクスポート</button>
-        <button class="ghost" data-action="exportMarkdown()">Markdownエクスポート</button>
-        <button class="danger" data-action="clearImportedExcel()">インポート済み問題を削除</button>
-      </div>
+      <div class="questionset-action-grid">
+        <section class="questionset-block">
+          <div class="questionset-block-header">
+            <h3>インポート</h3>
+            <p class="muted">Excelファイルを選択して、選択中の問題集にまとめて取り込みます。</p>
+          </div>
+          <div class="questionset-primary-row">
+            <div class="questionset-file-field">
+              <label>Excelファイル</label>
+              <input id="excelFile" type="file" accept=".xlsx,.xls">
+            </div>
+            <button id="importButton" data-action="importExcel()">インポート</button>
+          </div>
 
-      <div id="importProgress" class="import-progress hidden">
-        <div class="import-progress-header">
-          <strong id="importProgressTitle">インポート準備中</strong>
-          <span id="importProgressPercent">0%</span>
-        </div>
-        <div class="progress-bar">
-          <div id="importProgressBar" class="progress-bar-fill"></div>
-        </div>
-        <p id="importProgressDetail" class="muted">待機中</p>
-      </div>
+          <div id="importProgress" class="import-progress hidden">
+            <div class="import-progress-header">
+              <strong id="importProgressTitle">インポート準備中</strong>
+              <span id="importProgressPercent">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div id="importProgressBar" class="progress-bar-fill"></div>
+            </div>
+            <p id="importProgressDetail" class="muted">待機中</p>
+          </div>
+        </section>
 
-      <div class="button-list">
-        <button class="ghost" data-action="editQuestionSet()">選択中の問題集を編集</button>
-        <button class="danger" data-action="deleteQuestionSet()">選択中の問題集を削除</button>
-      </div>
+        <section class="questionset-block">
+          <div class="questionset-block-header">
+            <h3>エクスポート</h3>
+            <p class="muted">選択中の問題集を用途に合わせて出力します。</p>
+          </div>
+          <div class="questionset-export-grid">
+            <button class="ghost" data-action="exportExcel()">Excelエクスポート</button>
+            <button class="ghost" data-action="exportJson()">JSONエクスポート</button>
+            <button class="ghost" data-action="exportMarkdown()">Markdownエクスポート</button>
+          </div>
+        </section>
 
-      <div class="button-list mt-12">
-        <button data-action="showQuestionCreatorView()">問題作成画面を開く</button>
+        <section class="questionset-block questionset-block-wide">
+          <div class="questionset-block-header">
+            <h3>管理操作</h3>
+            <p class="muted">選択中の問題集の編集・削除や、関連問題の整理を行います。</p>
+          </div>
+          <div class="questionset-maintenance-grid">
+            <button class="ghost" data-action="editQuestionSet()">選択中の問題集を編集</button>
+            <button class="danger" data-action="deleteQuestionSet()">選択中の問題集を削除</button>
+            <button class="danger" data-action="clearImportedExcel()">インポート済み問題を削除</button>
+          </div>
+
+          <div class="questionset-open-builder">
+            <p class="muted">個別の問題を追加したい場合は、専用の問題作成画面を開いてください。</p>
+            <div class="button-list">
+              <button data-action="showQuestionCreatorView()">問題作成画面を開く</button>
+            </div>
+          </div>
+        </section>
       </div>
 
       <h3>問題集一覧</h3>
@@ -1284,6 +1388,7 @@ function adminQuestionSetCard() {
     </section>
   `;
 }
+
 
 function assignmentCard() {
   return `
