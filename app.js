@@ -1,4 +1,4 @@
-console.info("Zerquor LMS: question set import/export layout cleanup fix v20260708-02 loaded");
+console.info("Zerquor LMS: question set import/export layout cleanup fix v20260708-03 loaded");
 const API_BASE = "https://cct-english-api.tkm12325.workers.dev";
 const STORAGE_KEY = "cct.quiz.enterprise.session.v2";
 const TRUSTED_DEVICE_KEY = "pre.quiz.trusted_device.v1";
@@ -1109,8 +1109,7 @@ async function loadQuestionSetCategories(questionSetId) {
   return cache.categoriesBySet[questionSetId];
 }
 
-async 
-function ensureQuestionSetAdminStyles() {
+async function ensureQuestionSetAdminStyles() {
   if (document.getElementById("questionSetAdminStyles")) return;
   const style = document.createElement("style");
   style.id = "questionSetAdminStyles";
